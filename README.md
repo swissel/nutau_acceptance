@@ -7,8 +7,11 @@ This README would normally document whatever steps are necessary to get your app
 * Geometric Acceptance
 > DONE
 * Probability Distributions for Exiting Tau Leptons
-> *Last simulations of tau propagations in progress
-> *Last step is to reduce the outputs to probability density functions
+
+> Last simulations of tau propagations in progress
+
+> Last step is to reduce the outputs to probability density functions
+
 * Tau Lepton Decay in the atmosphere
 > Exponentially distributed lifetime
 * TAUOLA treatment of tau ecay products in atmosphere
