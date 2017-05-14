@@ -2,28 +2,26 @@
 
 This README would normally document whatever steps are necessary to get your application up and running.
 
-### What is this repository for? ###
+### Development Plan & Status ###
 
-* Quick summary
-* Version
-* [Learn Markdown](https://bitbucket.org/tutorials/markdowndemo)
+* Geometric Acceptance
+    > DONE
+* Probability Distributions for Exiting Tau Leptons
+    > Last simulations of tau propagations in progress
+    > Last step is to reduce the outputs to probability density functions
+* Tau Lepton Decay in the atmosphere
+    > Exponentially distributed lifetime
+* TAUOLA treatment of tau ecay products in atmosphere
+    > Distribution of shower initiation depths X_0
+    > Energy distribution of decay products
+    > Energy distribution of showers 
+* Radio Emission of Upgoing Air Showers (ZHAireS)
+    > Library (or parametrization) of pulses for various geometries
+* Detector Simulations
+    > Optimization of operating bandwidths.
+    > Target gain needed for scientifically compelling observations.
 
-### How do I get set up? ###
 
-* Summary of set up
-* Configuration
-* Dependencies
-* Database configuration
-* How to run tests
-* Deployment instructions
 
-### Contribution guidelines ###
 
-* Writing tests
-* Code review
-* Other guidelines
 
-### Who do I talk to? ###
-
-* Repo owner or admin
-* Other community or team contact
