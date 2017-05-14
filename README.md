@@ -3,7 +3,7 @@
 This README would normally document whatever steps are necessary to get your application up and running.
 
 ### Development Plan & Status ###
-
+1. Introduction
 1. Geometric Acceptance
     * DONE
 1. Probability Distributions for Exiting Tau Leptons
@@ -20,6 +20,10 @@ This README would normally document whatever steps are necessary to get your app
 1. Detector Simulations
     * Optimization of operating bandwidths.
     * Target gain needed for scientifically compelling observations.
+1. Results & Conclusions
+    * Optimal frequency band of observation
+    * Acceptance for various detector altitudes.
+    * Acceptance curves as a function of gain
 
 
 
