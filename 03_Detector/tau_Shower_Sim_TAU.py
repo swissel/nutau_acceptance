@@ -18,8 +18,8 @@ if __name__ == "__main__":
   parser.add_argument("-L",    "--lut_file",      default = os.environ['TAU_ACC_LUT_DIR'] + '/2.0km_ice_lowCS_stdEL/LUT_3e+17_eV.npz',     help='number of events to simulate', type=str)
   parser.add_argument("-c",    "--cut_ang",       default = 5., help='number of events to simulate', type=float)
   parser.add_argument("-e",    "--efield_file",   default = os.environ['TAU_ACC_ZHAIRES_DIR'] + '/interpolator_efields_3km.npz', help="interpolator file for the ZHSAireS electric fields")
-  parser.add_argument("-l",    "--start_frequency", default = 10., help="starting frequency (MHz)")
-  parser.add_argument("-s",    "--stop_frequency", default = 100., help="stopping frequency (MHz)")
+  parser.add_argument("-l",    "--start_frequency", default = 10., help="starting frequency (MHz)", type=float)
+  parser.add_argument("-s",    "--stop_frequency", default = 100., help="stopping frequency (MHz)", type=float)
   parser.add_argument("-out_tag", "--output_tag", default = 'test', help='tag for output files', type=str)
 
   #KLUDGE TO GET ARGPARSE TO READ NEGATIVE VALUES

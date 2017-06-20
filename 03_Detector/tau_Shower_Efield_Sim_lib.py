@@ -7,12 +7,15 @@ Earth_radius   = 6371.      # km
 tau_life_time  = 2.906e-13  # seconds
 tau_mass       = 1776.82e6  # eV/c2
 speed_of_light = 299792.458 # km / second
+kB_W_Hz_K = 1.38064852e-23 # Watts / Hz / K
 
 # Threshold voltage based on galactic noise and system temperature:
 T_ant  = 105.     # Kelvin (based on elog 655 entry by P. Gorham)
 T_sys  = 140.     # System temperature at the lower part of the ANITA band from elog 119
 kB     = 1.38e-23 # in Volts^2/Ohm/Hz/Kelvin
-Z_load = 50.      # 50 Ohm system
+Z_0 = 377. # Ohms impedance of free space
+Z_L = 50. # Ohms 50-Ohm characteristic impedance
+R_L = 50. # Ohms real part of antenna impedance
 #BW     = 400.e6   # bandwidth for first two ANITA bands.
 #threshold_voltage = 8.9e-06 # V, this is 8.9 microVolts for sky temp 290 Kelvin T_sys
 #threshold_voltage =np.sqrt(kB*(T_ant+T_sys)*Z_load*BW) # V, this is 8.22 microVolts for the parameters given above
@@ -32,7 +35,7 @@ def galactic_temperature(f_MHz):
     Iv = Ig * pow(nu, -0.52) * (1-np.exp(-tau))/tau + Ieg * pow(nu, -0.80) * np.exp(-tau)
     
     kB = 1.38064852e-23 # Watts / Hz / K
-    c = 299792458 # m/s
+    c = speed_of_light * 1e3 # m/s
     temp = Iv * c**2 / (2*(nu*1e6)**2)/kB
     ## IV is the intensity
     ## temp is the galactic noise temperature in Kelvin
@@ -68,10 +71,18 @@ def E_field_interp(view_angle_deg, zenith_angle_deg, f_Lo, f_High, log10_tau_ene
   
     # Since the efields are stored in 10-MHz subbands
     # integrate over the range from f_Lo to f_High in 10-MHz bands
-    E_field = 0.
+    E_field = np.zeros(len(distance_km))
+    #E_field = 0.
+    # TODO: Right now forcing the parameters outside the interpolation range to the edges
+    # shoudl replace with extrapolation
+    zenith_angle_deg[zenith_angle_deg > 87.] = 87.
+    zenith_angle_deg[zenith_angle_deg < 60.] = 60.
+    view_angle_deg[view_angle_deg < 0.04] = 0.04
+    view_angle_deg[view_angle_deg > 3.2 ] = 3.2 
     for i_f_Lo, freq in enumerate(np.arange(f_Lo, f_High + 10., 10.)):
     	E_field += efield_interpolator_list[i_f_Lo](zenith_angle_deg, view_angle_deg)   
     	#E_field += 1
+    #print E_field, zenith_angle_deg, view_angle_deg
     E_field *= 86.4/distance_km   # distance to tau decay point correction
     E_field *= 10**(log10_tau_energy - 17.) # Energy scaling
     return E_field
@@ -271,7 +282,9 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
 
     # 3. Load Energy Look-up Table
     LUT_th_exit, LUT_P_exit, LUT_log10_E_tau = load_tau_LUTs(LUT_file_name)
-    
+    P_LUT = np.zeros(len(x_exit[view_cut]))
+    P_range = np.zeros(len(x_exit[view_cut]))
+
     # 4. Load the Efield interpolator for this altitude
     global efield_interpolator_list
     efield_interpolator_list = load_efield_interpolator(altitude, EFIELD_LUT_file_name)
@@ -286,33 +299,44 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
         idx = np.argmin(np.abs(LUT_th_exit - GEOM_theta_exit[k]))
 
         # 5.2 Get tau lepton energy and decay position
-        P_range = 0.                  # zero until it is proven to decay before it passes the detector
+        #P_range = 0.                  # zero until it is proven to decay before it passes the detector
         P_det = 0.                    # zero until it is proven to be detectable
         if( LUT_P_exit[idx] > 1.e-15):  # make sure the probability of this event is non-zero
-            log10_tau_energy = LUT_log10_E_tau[idx][np.random.randint(0,len(LUT_log10_E_tau[idx]))] # random tau energy
+            P_LUT[k] = 1.	    
+	    log10_tau_energy = LUT_log10_E_tau[idx][np.random.randint(0,len(LUT_log10_E_tau[idx]))] # random tau energy
             decay_range = tau_lepton_decay_range(log10_tau_energy)                      # estimated decay range
             X0_dist[k] = np.random.exponential(scale=decay_range)                          # sample exponentially distributed decay positions
 	    x_decay[k], y_decay[k], z_decay[k], decay_view_angle[k], dist_decay_to_detector[k] = decay_point_geom(k_x[k], k_y[k], k_z[k], x_exit[k], y_exit[k], z_exit[k], X0_dist[k], x_det, y_det, z_det, exit_view_angle[k])
             if(X0_dist[k] < dist_exit_to_detector[k]): # If the event is contained within the range, then the probability is 1.
-                P_range = 1.
+                P_range[k] = 1.
                 #print exit_view_angle[k]*180./np.pi
                 # TODO: calculate the exit_view_angle from the decay point rather than the exit point
 		# E_field_interp(view_angle_deg, zenith_angle_deg, f_Lo, f_High, log10_tau_energy, distance_km)
-                Peak_E_field = E_field_interp(decay_view_angle[k], zenith_angle[k]*180./np.pi, f_Lo, f_High, log10_tau_energy, dist_decay_to_detector[k])
-                Peak_Voltage = E_to_V_signal(Peak_E_field)
-		# in 10-MHz steps, to match the frequency bins of the peak voltage
-		Noise_Voltage = galactic_noise_voltage(np.arange(f_Lo, f_High+10, 10))
-		Peak_Voltage_SNR = Peak_Voltage / Noise_Voltage 
-                if(Peak_Voltage_SNR > threshold_voltage_snr):
-                    #print 'Peak_Voltage %1.2e, view_angle %1.2f'%(Peak_Voltage, exit_view_angle[k]*180./np.pi)
-                    P_det = 1.
-                    triggered_events.append(np.array( [ log10_tau_energy, X0_dist, dist_decay_to_detector[k], Peak_E_field, exit_view_angle[k]*180./np.pi, LUT_P_exit[idx], GEOM_theta_exit[k] ]))
-            #print '%1.1f\t%1.1f\t%1.1f\t%1.1f\t%d\t%1.1f'%(log10_tau_energy, decay_range, X0_dist, dist_to_detector[k], X0_dist < dist_to_detector[k], Peak_Voltage/threshold_voltage)
+	if(k%100000 == 0 and k>0):
+	    print 'Progress: %d events '%k
+
+    # Calculate the electric field by summing the interpolated electric fields in 10-MHz subbands
+    # perform array-wise interpolations (outside of the event loop) to minimize number of computations. 
+    Peak_E_field = E_field_interp(decay_view_angle, zenith_angle*180./np.pi, f_Lo, f_High, log10_tau_energy, dist_decay_to_detector)
+    # integrating in 10-MHz steps, to match the frequency bins of the peak voltage
+    df = 10.# MHz
+    Noise_Voltage = np.sqrt(np.sum(noise_v_sq(np.arange(f_Lo, f_High+df, df), Z_L, R_L)*1e6)) # factor of 1e6 because noise temperature is in V/Hz.
+
+    for k in range(0,len(GEOM_theta_exit)):
+	if( P_LUT[k] == 1.):
+		if( P_range[k] == 1.):
+			Peak_Voltage = E_to_V_signal(Peak_E_field[k])
+			Peak_Voltage_SNR = Peak_Voltage / Noise_Voltage
+			if(Peak_Voltage_SNR > threshold_voltage_snr):
+			    print 'Peak_Voltage %1.2e, Noise_Voltage %1.2e, SNR %1.2e, view_angle %1.2f'%(Peak_Voltage[k], Noise_Voltage, Peak_Voltage_SNR, exit_view_angle[k]*180./np.pi)
+			    P_det = 1.
+			    triggered_events.append(np.array( [ log10_tau_energy, dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_E_field[k], Peak_Voltage_SNR, exit_view_angle[k]*180./np.pi, LUT_P_exit[idx], GEOM_theta_exit[k], decay_view_angle[k] ]))
+		    #print '%1.1f\t%1.1f\t%1.1f\t%1.1f\t%d\t%1.1f'%(log10_tau_energy, decay_range, X0_dist, dist_to_detector[k], X0_dist < dist_to_detector[k], Peak_Voltage/threshold_voltage)
         #print LUT_E_tau[idx]
         #print '%1.2f'%tau_energy
         sum_P_exit                += LUT_P_exit[idx] 
-        sum_P_exit_P_range        += LUT_P_exit[idx] * P_range 
-        sum_P_exit_P_range_P_det  += LUT_P_exit[idx] * P_range * P_det
+        sum_P_exit_P_range        += LUT_P_exit[idx] * P_range[k] 
+        sum_P_exit_P_range_P_det  += LUT_P_exit[idx] * P_range[k] * P_det
         if(k%100000 == 0 and k>0):
 	#if(k%1== 0 and k>0):
 	    print 'After %d events: '%k
