@@ -328,7 +328,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
 			Peak_Voltage = E_to_V_signal(Peak_E_field[k])
 			Peak_Voltage_SNR = Peak_Voltage / Noise_Voltage
 			if(Peak_Voltage_SNR > threshold_voltage_snr):
-			    print 'Peak_Voltage %1.2e, Noise_Voltage %1.2e, SNR %1.2e, view_angle %1.2f'%(Peak_Voltage[k], Noise_Voltage, Peak_Voltage_SNR, exit_view_angle[k]*180./np.pi)
+			    #print 'Peak_Voltage %1.2e, Noise_Voltage %1.2e, SNR %1.2e, view_angle %1.2f'%(Peak_Voltage, Noise_Voltage, Peak_Voltage_SNR, exit_view_angle[k]*180./np.pi)
 			    P_det = 1.
 			    triggered_events.append(np.array( [ log10_tau_energy, dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_E_field[k], Peak_Voltage_SNR, exit_view_angle[k]*180./np.pi, LUT_P_exit[idx], GEOM_theta_exit[k], decay_view_angle[k] ]))
 		    #print '%1.1f\t%1.1f\t%1.1f\t%1.1f\t%d\t%1.1f'%(log10_tau_energy, decay_range, X0_dist, dist_to_detector[k], X0_dist < dist_to_detector[k], Peak_Voltage/threshold_voltage)
