@@ -1,6 +1,6 @@
 import os
 
-altitude = 37
+altitude = 2
 energies = ["1e+15", "3e+15", "1e+16", "3e+16", "1e+17", "3e+17", "1e+18", "3e+18", "1e+19", "3e+19", "1e+20", "3e+20", "1e+21"][::-1]
 print energies
 

@@ -75,12 +75,21 @@ def E_field_interp(view_angle_deg, zenith_angle_deg, f_Lo, f_High, log10_tau_ene
     #E_field = 0.
     # TODO: Right now forcing the parameters outside the interpolation range to the edges
     # shoudl replace with extrapolation
-    zenith_angle_deg[zenith_angle_deg > 87.] = 87.
-    zenith_angle_deg[zenith_angle_deg < 60.] = 60.
-    view_angle_deg[view_angle_deg < 0.04] = 0.04
-    view_angle_deg[view_angle_deg > 3.2 ] = 3.2 
-    for i_f_Lo, freq in enumerate(np.arange(f_Lo, f_High + 10., 10.)):
-    	E_field += efield_interpolator_list[i_f_Lo](zenith_angle_deg, view_angle_deg)   
+    z = zenith_angle_deg.copy()
+    v = view_angle_deg.copy()
+    z[z>87.] = 87.
+    z[z<60.] = 60.
+    v[v<0.04] = 0.04
+    v[v>3.16] = 3.16
+
+    #zenith_angle_deg[zenith_angle_deg > 87.] = 87.
+    #zenith_angle_deg[zenith_angle_deg < 60.] = 60.
+    #view_angle_deg[view_angle_deg < 0.04] = 0.04
+    #view_angle_deg[view_angle_deg > 3.16 ] = 3.16
+    #print E_field, zenith_angle_deg, view_angle_deg
+    for freq in np.arange(f_Lo, f_High + 10., 10.):
+        i_f_Lo = int(round(freq / 10. - 1))
+    	E_field += efield_interpolator_list[i_f_Lo](z,v)
     	#E_field += 1
     #print E_field, zenith_angle_deg, view_angle_deg
     E_field *= 86.4/distance_km   # distance to tau decay point correction
@@ -156,7 +165,7 @@ def get_view_angle(k_x, k_y, k_z, x_pos, y_pos, z_pos, x_det, y_det, z_det):
     y_pd = y_pos - y_det
     z_pd = z_pos - z_det
     cos_view_angle = -( k_x * x_pd + k_y * y_pd + k_z * z_pd ) / np.sqrt(x_pd**2 + y_pd**2 + z_pd**2)
-    return np.arccos(cos_view_angle)
+    return np.arccos(cos_view_angle) # radians
 
 ####################################################################################
 
@@ -164,11 +173,13 @@ def get_distance_to_detector(x_pos, y_pos, z_pos, x_det, y_det, z_det):
     x_pd = x_pos - x_det
     y_pd = y_pos - y_det
     z_pd = z_pos - z_det
-    return np.sqrt( x_pd**2 + y_pd**2 + (z_pd - Earth_radius)**2 )
+
+    return np.sqrt( x_pd**2 + y_pd**2 + z_pd**2 )
 
 ####################################################################################
 
 def decay_point_geom(k_x, k_y, k_z, x_exit, y_exit, z_exit, X0_decay, x_det, y_det, z_det, exit_view_angle):
+    # all (input and output) angles in radians
     exit_phi_angle = np.arctan(k_y/k_x);
     z_decay = X0_decay * np.sin(exit_view_angle) + z_exit
     y_decay = (X0_decay * np.cos(exit_view_angle))*np.sin(exit_phi_angle) + y_exit
@@ -260,7 +271,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     print ''
     x_det = 0.
     y_det = 0.
-    z_det = altitude
+    z_det = altitude + Earth_radius
 
     # 2. Impose a viewing angle cut
     view_cut = exit_view_angle*180./np.pi<cut_ang
@@ -270,8 +281,8 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     # the exit point which is what it is now.
     dist_exit_to_detector = get_distance_to_detector(x_exit, y_exit, z_exit, x_det, y_det, z_det)[view_cut]  #np.sqrt( x_exit**2 + (z_exit - altitude - Earth_radius)**2 ) [view_cut]
     GEOM_theta_exit = np.arccos(cos_theta_exit[view_cut])*180./np.pi
-    zenith_angle = np.pi/2. - exit_view_angle[view_cut] # radians
     exit_view_angle = exit_view_angle[view_cut] #radians
+    zenith_angle = np.pi/2. - np.array(exit_view_angle) # radians
     # set up some arrays to be calculated on the fly
     dist_decay_to_detector = np.zeros(len(dist_exit_to_detector))
     x_decay = np.zeros(len(x_exit[view_cut]))
@@ -281,6 +292,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     X0_dist = np.zeros(len(dist_exit_to_detector))
 
     # 3. Load Energy Look-up Table
+    print "Loading energy look-up table: ", LUT_file_name
     LUT_th_exit, LUT_P_exit, LUT_log10_E_tau = load_tau_LUTs(LUT_file_name)
     P_LUT = np.zeros(len(x_exit[view_cut]))
     P_range = np.zeros(len(x_exit[view_cut]))
@@ -317,7 +329,8 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
 
     # Calculate the electric field by summing the interpolated electric fields in 10-MHz subbands
     # perform array-wise interpolations (outside of the event loop) to minimize number of computations. 
-    Peak_E_field = E_field_interp(decay_view_angle, zenith_angle*180./np.pi, f_Lo, f_High, log10_tau_energy, dist_decay_to_detector)
+    #Peak_E_field = E_field_interp(decay_view_angle*180./np.pi, zenith_angle*180./np.pi, f_Lo, f_High, log10_tau_energy, dist_decay_to_detector)
+    Peak_E_field = E_field_interp(decay_view_angle*180./np.pi, (np.pi/2. - exit_view_angle)*180./np.pi, f_Lo, f_High, log10_tau_energy, dist_decay_to_detector)
     # integrating in 10-MHz steps, to match the frequency bins of the peak voltage
     df = 10.# MHz
     Noise_Voltage = np.sqrt(np.sum(noise_v_sq(np.arange(f_Lo, f_High+df, df), Z_L, R_L)*1e6)) # factor of 1e6 because noise temperature is in V/Hz.
@@ -328,9 +341,9 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
 			Peak_Voltage = E_to_V_signal(Peak_E_field[k])
 			Peak_Voltage_SNR = Peak_Voltage / Noise_Voltage
 			if(Peak_Voltage_SNR > threshold_voltage_snr):
-			    #print 'Peak_Voltage %1.2e, Noise_Voltage %1.2e, SNR %1.2e, view_angle %1.2f'%(Peak_Voltage, Noise_Voltage, Peak_Voltage_SNR, exit_view_angle[k]*180./np.pi)
+			    #print len(triggered_events), 'Peak_Voltage %1.2e, Noise_Voltage %1.2e, SNR %1.2e, view_angle %1.2f'%(Peak_Voltage, Noise_Voltage, Peak_Voltage_SNR, exit_view_angle[k]*180./np.pi)
 			    P_det = 1.
-			    triggered_events.append(np.array( [ log10_tau_energy, dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_E_field[k], Peak_Voltage_SNR, exit_view_angle[k]*180./np.pi, LUT_P_exit[idx], GEOM_theta_exit[k], decay_view_angle[k] ]))
+			    triggered_events.append(np.array( [ log10_tau_energy, dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_E_field[k], Peak_Voltage_SNR, exit_view_angle[k]*180./np.pi, LUT_P_exit[idx], GEOM_theta_exit[k], decay_view_angle[k]*180./np.pi,  zenith_angle[k]*180./np.pi ]))
 		    #print '%1.1f\t%1.1f\t%1.1f\t%1.1f\t%d\t%1.1f'%(log10_tau_energy, decay_range, X0_dist, dist_to_detector[k], X0_dist < dist_to_detector[k], Peak_Voltage/threshold_voltage)
         #print LUT_E_tau[idx]
         #print '%1.2f'%tau_energy
@@ -357,8 +370,17 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
                             A_Omega_exit     = A_Omega*sum_P_exit/float(N_cut),
                             A_Omega_range    = A_Omega*sum_P_exit_P_range/float(N_cut),
                             A_Omega_trig     = A_Omega*sum_P_exit_P_range_P_det/float(N_cut),
+			    log10_tau_energy = log10_tau_energy)
+
+
+    np.savez(outTag+'_events.npz', A_Omega_start    = A_Omega,
+                            A_Omega_exit     = A_Omega*sum_P_exit/float(N_cut),
+                            A_Omega_range    = A_Omega*sum_P_exit_P_range/float(N_cut),
+                            A_Omega_trig     = A_Omega*sum_P_exit_P_range_P_det/float(N_cut),
+			    log10_tau_energy = log10_tau_energy,
                             triggered_events = np.array(triggered_events))
 
-    print "Wrote ", outTag+'.npz'
+    print "Wrote ", outTag+'.npz and ', outTag+'_events.npz'
+
     exit()
 
