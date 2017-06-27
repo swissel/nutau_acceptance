@@ -290,6 +290,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     z_decay = np.zeros(len(z_exit[view_cut]))
     decay_view_angle = np.zeros(len(exit_view_angle))
     X0_dist = np.zeros(len(dist_exit_to_detector))
+    log10_tau_energy = np.zeros(len(exit_view_angle))
 
     # 3. Load Energy Look-up Table
     print "Loading energy look-up table: ", LUT_file_name
@@ -315,8 +316,8 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
         P_det = 0.                    # zero until it is proven to be detectable
         if( LUT_P_exit[idx] > 1.e-15):  # make sure the probability of this event is non-zero
             P_LUT[k] = 1.	    
-	    log10_tau_energy = LUT_log10_E_tau[idx][np.random.randint(0,len(LUT_log10_E_tau[idx]))] # random tau energy
-            decay_range = tau_lepton_decay_range(log10_tau_energy)                      # estimated decay range
+	    log10_tau_energy[k] = LUT_log10_E_tau[idx][np.random.randint(0,len(LUT_log10_E_tau[idx]))] # random tau energy
+            decay_range = tau_lepton_decay_range(log10_tau_energy[k])                      # estimated decay range
             X0_dist[k] = np.random.exponential(scale=decay_range)                          # sample exponentially distributed decay positions
 	    x_decay[k], y_decay[k], z_decay[k], decay_view_angle[k], dist_decay_to_detector[k] = decay_point_geom(k_x[k], k_y[k], k_z[k], x_exit[k], y_exit[k], z_exit[k], X0_dist[k], x_det, y_det, z_det, exit_view_angle[k])
             if(X0_dist[k] < dist_exit_to_detector[k]): # If the event is contained within the range, then the probability is 1.
@@ -343,7 +344,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
 			if(Peak_Voltage_SNR > threshold_voltage_snr):
 			    #print len(triggered_events), 'Peak_Voltage %1.2e, Noise_Voltage %1.2e, SNR %1.2e, view_angle %1.2f'%(Peak_Voltage, Noise_Voltage, Peak_Voltage_SNR, exit_view_angle[k]*180./np.pi)
 			    P_det = 1.
-			    triggered_events.append(np.array( [ log10_tau_energy, dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_E_field[k], Peak_Voltage_SNR, exit_view_angle[k]*180./np.pi, LUT_P_exit[idx], GEOM_theta_exit[k], decay_view_angle[k]*180./np.pi,  zenith_angle[k]*180./np.pi ]))
+			    triggered_events.append(np.array( [ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_E_field[k], Peak_Voltage_SNR, exit_view_angle[k]*180./np.pi, LUT_P_exit[idx], GEOM_theta_exit[k], decay_view_angle[k]*180./np.pi,  zenith_angle[k]*180./np.pi ]))
 		    #print '%1.1f\t%1.1f\t%1.1f\t%1.1f\t%d\t%1.1f'%(log10_tau_energy, decay_range, X0_dist, dist_to_detector[k], X0_dist < dist_to_detector[k], Peak_Voltage/threshold_voltage)
         #print LUT_E_tau[idx]
         #print '%1.2f'%tau_energy
