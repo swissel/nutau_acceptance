@@ -325,7 +325,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
                 # TODO: calculate the exit_view_angle from the decay point rather than the exit point
 		# E_field_interp(view_angle_deg, zenith_angle_deg, f_Lo, f_High, log10_tau_energy, distance_km)
 	if(k%100000 == 0 and k>0):
-	    print 'Progress: %d events '%k
+	    print 'Progress: %d events '%k, log10_tau_energy
 
     # Calculate the electric field by summing the interpolated electric fields in 10-MHz subbands
     # perform array-wise interpolations (outside of the event loop) to minimize number of computations. 
