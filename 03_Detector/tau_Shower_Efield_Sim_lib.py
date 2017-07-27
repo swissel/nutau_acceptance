@@ -113,8 +113,11 @@ def E_field_interp(view_angle_deg, zenith_angle_deg, f_Lo, f_High, log10_tau_ene
     for freq in np.arange(f_Lo, f_High + df, df):
         i_f_Lo = int(round(freq / df - 1))
         E_field += efield_interpolator_list[i_f_Lo](z,v) * df
-        #E_field += 1
-    #print E_field, zenith_angle_deg, view_angle_deg
+	
+    # account for ZHAIReS sims only extending to 3.16 deg 
+    #TODO: right now sampling a gaussian centered at zero to extrapolate to the wider angles, should verify this parameterization
+    E_field[view_angle_deg>3.16] = E_field[view_angle_deg>3.16]*np.exp( -(view_angle_deg[view_angle_deg>3.16]-0.)**2 / (2*3.16)**2)
+    
     E_field *= 86.4/distance_km   # distance to tau decay point correction
     E_field *= 10**(log10_tau_energy - 17.) # Energy scaling
     return E_field
@@ -282,7 +285,7 @@ def parse_input_args(input_arg_string):
 
 ####################################################################################
 
-def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_ang, f_Lo, f_High, outTag='test'):
+def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_ang, f_Lo, f_High, outTag='test', N=-1):
 
     # 1. Load geometry file
     GEOM = np.load(geom_file_name)
@@ -290,21 +293,28 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     print '\nGEOMETRY FILE INPUT ARGUMENTS\n', 
     for key in GEOM_inputs.keys():
         print '\t',key.ljust(20), GEOM_inputs[key]
-    cos_theta_exit  = GEOM['cos_theta_exit']
-    exit_view_angle = GEOM['exit_view_angle']
-    x_exit          = GEOM['x_exit']
+
+    if( N == -1):
+    	N_tot = len(GEOM['cos_theta_exit'])
+    else:
+    	N_tot = int(N)
+    print 'Number of Geometry Events to scan', N_tot
+    print ''
+
+    cos_theta_exit  = GEOM['cos_theta_exit'][0:N_tot]
+    exit_view_angle = GEOM['exit_view_angle'][0:N_tot]
+    x_exit          = GEOM['x_exit'][0:N_tot]
     y_exit          = np.zeros(len(x_exit))
     #y_exit          = GEOM['y_exit']
-    z_exit          = GEOM['z_exit']
-    k_x             = GEOM['k_x']
-    k_y             = GEOM['k_y']
-    k_z             = GEOM['k_z']
+    z_exit          = GEOM['z_exit'][0:N_tot]
+    k_x             = GEOM['k_x'][0:N_tot]
+    k_y             = GEOM['k_y'][0:N_tot]
+    k_z             = GEOM['k_z'][0:N_tot]
     A_geom          = GEOM['A_geom']
     altitude = float(GEOM_inputs['altitude'])
     GEOM.close()
-    N_tot = len(cos_theta_exit)
-    print 'Number of Geometry Events', N_tot
-    print ''
+   
+    # Set up the detector position
     x_det = 0.
     y_det = 0.
     z_det = altitude + Earth_radius
@@ -375,19 +385,20 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
             # If the shower decays beyond the detector, then it has a negative x-position. The range probability in that case is zero.
             #if( (x_decay[k] < 0.) and (X0_dist[k] < dist_exit_to_detector[k])):
             #    print "Decay beyond detector", x_decay[k], x_exit[k], X0_dist[k], dist_decay_to_detector[k], dist_exit_to_detector[k]
-            if((X0_dist[k] < dist_exit_to_detector[k]) and (x_decay[k] >= 0.)):
+            if((X0_dist[k] < dist_exit_to_detector[k]) and (x_decay[k] > 0.)):
                 P_range[k] = 1.
-                #print exit_view_angle[k]*180./np.pi
-                # TODO: calculate the exit_view_angle from the decay point rather than the exit point
-		# E_field_interp(view_angle_deg, zenith_angle_deg, f_Lo, f_High, log10_tau_energy, distance_km)
+              	# E_field_interp(view_angle_deg, zenith_angle_deg, f_Lo, f_High, log10_tau_energy, distance_km)
+	    #elif( (x_decay[k] <= 0.) ):
+	    #	print k, " decayed past the detector ", P_range[k], " ", decay_view_angle[k], " ", x_decay[k]
 	if(k%100000 == 0 and k>0):
 	    print 'Progress: %d events '%k, log10_tau_energy[k]
 
     # Calculate the electric field by summing the interpolated electric fields in 10-MHz subbands
     # perform array-wise interpolations (outside of the event loop) to minimize number of computations. 
+    Peak_E_field = E_field_interp(decay_view_angle*180./np.pi, zenith_angle*180./np.pi, f_Lo, f_High, log10_tau_energy, dist_decay_to_detector)
     #Peak_E_field = E_field_interp(decay_view_angle*180./np.pi, zenith_angle*180./np.pi, f_Lo, f_High, log10_tau_energy, dist_decay_to_detector)
-    
-    Peak_E_field = E_field_interp(decay_view_angle*180./np.pi, (np.pi/2. - exit_view_angle)*180./np.pi, f_Lo, f_High, log10_tau_energy, dist_decay_to_detector)
+    ####OLD: Peak_E_field = E_field_interp(decay_view_angle*180./np.pi, (np.pi/2. - exit_view_angle)*180./np.pi, f_Lo, f_High, log10_tau_energy, dist_decay_to_detector)
+    #####DEBUG: Peak_E_field = np.zeros(len(GEOM_theta_exit)) + Noise_Voltage * 100.;
     for k in range(0,len(GEOM_theta_exit)):
         if( P_LUT[k] > 1.e-15):
             if( P_range[k] == 1.):
@@ -397,30 +408,33 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
                     #print len(triggered_events), 'Peak_Voltage %1.2e, Noise_Voltage %1.2e, SNR %1.2e, View_angle %1.2f'%(Peak_Voltage, Noise_Voltage, Peak_Voltage_SNR, exit_view_angle[k]*180./np.pi)
                     P_det[k] = 1.
                     triggered_events.append(np.array( [ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_E_field[k], Peak_Voltage_SNR, exit_view_angle[k]*180./np.pi, P_LUT[k], GEOM_theta_exit[k], decay_view_angle[k]*180./np.pi,  zenith_angle[k]*180./np.pi ]))
-                    #print '%1.1f\t%1.1f\t%1.1f\t%1.1f\t%d\t%1.1f'%(log10_tau_energy, decay_range, X0_dist, dist_to_detector[k], X0_dist < dist_to_detector[k], Peak_Voltage/threshold_voltage)
-                    #print LUT_E_tau[idx]
+                    #
+		    #print LUT_E_tau[idx]
                     #print '%1.2f'%tau_energy
                 #else:
                 #    print "Didn't trigger on ", 'Peak_Voltage %1.2e, Noise_Voltage %1.2e, SNR %1.2e, View_angle %1.2f'%(Peak_Voltage, Noise_Voltage, Peak_Voltage_SNR, exit_view_angle[k]*180./np.pi)
+	    #else:
+	    	#print "\t", k, " didn't pass range cut", P_det[k]
         sum_P_exit                += P_LUT[k]
         sum_P_exit_P_range        += P_LUT[k] * P_range[k]
         sum_P_exit_P_range_P_det  += P_LUT[k] * P_range[k] * P_det[k]
+	
         if(k%100000 == 0 and k>0):
             #if(k%1== 0 and k>0):
             print 'After %d events: %d events triggered: '%(len(GEOM_theta_exit[0:k]), len(triggered_events))
             print '\t %1.3e km^2 sr'%A_Omega
             print '\t %1.3e km^2 sr'%(A_Omega*sum_P_exit / float(k))
-            print '\t %1.3e km^2 sr'%(A_Omega*sum_P_exit_P_range / float(k))
-            print '\t %1.3e km^2 sr'%(A_Omega*sum_P_exit_P_range_P_det / float(k))
+            print '\t %1.3e km^2 sr'%(A_Omega*sum_P_exit_P_range / float(k) )
+            print '\t %1.3e km^2 sr'%(A_Omega*sum_P_exit_P_range_P_det / float(k) )
             print '\t ',np.array(triggered_events).shape
             print ''
         all_events.append([ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_E_field[k], Peak_Voltage_SNR, exit_view_angle[k]*180./np.pi, P_LUT[k], GEOM_theta_exit[k], decay_view_angle[k]*180./np.pi,  zenith_angle[k]*180./np.pi ])
 
     print 'After all %d events, %d events triggered: '%(len(GEOM_theta_exit), len(triggered_events))
-    '\t %1.3e km^2 sr'%A_Omega
-    '\t %1.3e km^2 sr'%(A_Omega*sum_P_exit/float(N_cut))
-    '\t %1.3e km^2 sr'%(A_Omega*sum_P_exit_P_range/float(N_cut))
-    '\t %1.3e km^2 sr'%(A_Omega*sum_P_exit_P_range_P_det/float(N_cut))
+    print '\t %1.3e km^2 sr'%(A_Omega)
+    print '\t %1.3e km^2 sr, %d events exited Earth'%(A_Omega*sum_P_exit/float(N_cut),N_tot*sum_P_exit/float(N_cut) )
+    print '\t %1.3e km^2 sr, %d events decayed before detector'%(A_Omega*sum_P_exit_P_range/float(N_cut), N_tot*sum_P_exit_P_range/float(N_cut))
+    print '\t %1.3e km^2 sr, %d events triggered'%(A_Omega*sum_P_exit_P_range_P_det/float(N_cut), N_tot*sum_P_exit_P_range_P_det/float(N_cut))
 
     np.savez(outTag+'.npz', A_Omega_start    = A_Omega,
                             A_Omega_exit     = A_Omega*sum_P_exit/float(N_cut),
