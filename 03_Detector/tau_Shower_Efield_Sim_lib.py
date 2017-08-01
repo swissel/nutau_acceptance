@@ -52,14 +52,18 @@ def noise_v_sq(freq_MHz, Z_L, Z_A, Gain_dB):
 
 ####################################################################################
 
-def noise_voltage(freq_min_MHz, freq_max_MHz, df,  Z_L, Z_A, Gain_dB):
+def noise_voltage(freq_min_MHz, freq_max_MHz, df,  Z_L, Z_A, Gain_dB, Nphased=1.):
     # TODO: Include reflection losses at the antennas as (1-Gamma^2)
-    gal_noise = np.sqrt(np.sum(noise_v_sq(np.arange(freq_min_MHz, freq_max_MHz + df, df), Z_L, R_L, Gain_dB)*1e6 * df ))
+    gal_noise = np.sqrt(np.sum(noise_v_sq(np.arange(freq_min_MHz, freq_max_MHz + df, df), Z_L, R_L, Gain_dB)*1e6 * df ))/Nphased 
     sys_noise = np.sqrt( kB_W_Hz_K * (T_sys + T_ant) * (freq_max_MHz - freq_min_MHz)*1e6 * Z_L)
     
     # this is in V^2/Hz
     T_gal = galactic_temperature(np.arange(freq_min_MHz, freq_max_MHz + df, df))[1]
-    combined_temp = pow(10., Gain_dB/10.)*T_gal + T_sys + T_ant
+    #assuming we're phasing after the amplifier rather than before.
+    # if before, then the system temperature would also decrease as 1/N 
+    # note that temperature ~ power, so this is decreasing the noise voltage by 1/sqrt(N)
+    # as you would expect from incoherent noise
+    combined_temp = pow(10., Gain_dB/10.)*T_gal/Nphased + T_ant/Nphased + T_sys
 
     #print np.sum(T_gal)
     #print np.sum(combined_temp)
@@ -110,12 +114,12 @@ def E_field_interp(view_angle_deg, zenith_angle_deg, f_Lo, f_High, log10_tau_ene
     #view_angle_deg[view_angle_deg > 3.16 ] = 3.16
     #print E_field, zenith_angle_deg, view_angle_deg
     df = 10.
-    for freq in np.arange(f_Lo, f_High + df, df):
+    for freq in np.arange(f_Lo, f_High, df):
         i_f_Lo = int(round(freq / df - 1))
-        E_field += efield_interpolator_list[i_f_Lo](z,v) * df
+        E_field += efield_interpolator_list[i_f_Lo](z,v) 
 	
     # account for ZHAIReS sims only extending to 3.16 deg 
-    #TODO: right now sampling a gaussian centered at zero to extrapolate to the wider angles, should verify this parameterization
+    #TODO: right now sampling a gaussian centered at zero to extrapolate to the wider angles. Should verify with ZHAireS sims out to wider angles
     E_field[view_angle_deg>3.16] = E_field[view_angle_deg>3.16]*np.exp( -(view_angle_deg[view_angle_deg>3.16]-0.)**2 / (2*3.16)**2)
     
     E_field *= 86.4/distance_km   # distance to tau decay point correction
@@ -124,8 +128,8 @@ def E_field_interp(view_angle_deg, zenith_angle_deg, f_Lo, f_High, log10_tau_ene
 
 ####################################################################################
 
-def E_to_V_signal(E_pk, Gain_dB):
-    return E_pk * (speed_of_light*1.e3)/300.e6 * np.sqrt(50./377. * pow(10., Gain_dB/10.)/4/np.pi)
+def E_to_V_signal(E_pk, Gain_dB, Nphased=1):
+    return E_pk * (speed_of_light*1.e3)/300.e6 * np.sqrt(50./377. * pow(10., Gain_dB/10.)/4/np.pi) * Nphased
 
 ####################################################################################
 
