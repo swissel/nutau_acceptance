@@ -378,6 +378,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     X0_dist = np.zeros(len(dist_exit_to_detector))
     log10_tau_energy = np.zeros(len(exit_view_angle))
     Peak_Voltage_SNR = np.zeros(len(exit_view_angle))
+    
     # 4. Compute the noise in this band
     #       integrating in 10-MHz steps, to match the frequency bins of the peak voltage
     df = 10.# MHz
@@ -409,17 +410,14 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     
     # 7. Loop Through Geometry Events
     sum_P_exit = 0.
-    sum_P_exit_P_range = 0.
-    sum_P_exit_P_range_P_det = 0.    
+    sum_P_exit_P_range = 0.	     # zero until it is proven to decay before it passes the detector
+    sum_P_exit_P_range_P_det = 0.    # zero until it is proven to be detectable
     triggered_events = []
     all_events = []
     for k in range(0,len(GEOM_theta_exit)):
-        # 5.1 Get LUT exit angle closest to geometry exit angle
+        # 7.1 Get LUT exit angle closest to geometry exit angle
         idx = np.argmin(np.abs(LUT_th_exit - GEOM_theta_exit[k]))
-        #print idx, LUT_P_exit[idx], GEOM_theta_exit[k]
-        # 5.2 Get tau lepton energy and decay position
-        #P_range = 0.                  # zero until it is proven to decay before it passes the detector
-        #P_det = 0.                    # zero until it is proven to be detectable
+        # 7.2 Get tau lepton energy and decay position
         P_LUT[k] = LUT_P_exit[idx]
         if( P_LUT[k] > 1.e-15):  # make sure the probability of this event is non-zero  
             log10_tau_energy[k] = LUT_log10_E_tau[idx][np.random.randint(0,len(LUT_log10_E_tau[idx]))] # random tau energy
@@ -427,20 +425,18 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
             X0_dist[k] = np.random.exponential(scale=decay_range)                          # sample exponentially distributed decay positions
             x_decay[k], y_decay[k], z_decay[k], decay_view_angle[k], dist_decay_to_detector[k] = decay_point_geom(k_x[k], k_y[k], k_z[k], x_exit[k], y_exit[k], z_exit[k], X0_dist[k], x_det, y_det, z_det)
             # If the event is contained within the range, then the probability is 1.
-            # If the shower decays beyond the detector, then it has a negative x-position. The range probability in that case is zero.
-            #if( (x_decay[k] < 0.) and (X0_dist[k] < dist_exit_to_detector[k])):
-            #    print "Decay beyond detector", x_decay[k], x_exit[k], X0_dist[k], dist_decay_to_detector[k], dist_exit_to_detector[k]
+            # If the shower decays beyond the detector, then it has a negative x-position. 
+	    # The range probability in that case is zero.
             if((X0_dist[k] < dist_exit_to_detector[k]) and (x_decay[k] > 0.)):
                 P_range[k] = 1.
-              	# E_field_interp(view_angle_deg, zenith_angle_deg, f_Lo, f_High, log10_tau_energy, distance_km)
-	    #elif( (x_decay[k] <= 0.) ):
-	    #	print k, " decayed past the detector ", P_range[k], " ", decay_view_angle[k], " ", x_decay[k]
+	
 	if(k%100000 == 0 and k>0):
 	    print 'Progress: %d events '%k, log10_tau_energy[k]
 
-    # Calculate the electric field by summing the interpolated electric fields in 10-MHz subbands
-    # perform array-wise interpolations (outside of the event loop) to minimize number of computations. 
+    # 8. Calculate the electric field and voltage at the detector 
     # 
+    # Electric field is calculated by summing the interpolated electric fields in 10-MHz subbands
+    # perform array-wise interpolations (outside of the event loop) to minimize number of computations. 
     # Voltage is calculated in three steps:
     #	1. Interpolate electric field from ZHAireS simulations in 10 MHz bins
     #   2. Convert electric field to voltage based on detector model (gain, nphased, 
@@ -448,23 +444,17 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
 
     Peak_Voltage = Voltage_interp(decay_view_angle*180./np.pi, zenith_angle*180./np.pi, f_Lo, f_High, log10_tau_energy, dist_exit_to_detector, dist_decay_to_detector, Gain_dB, Nphased)
     
+    # 9. Check for trigger at the detector
     for k in range(0,len(GEOM_theta_exit)):
         if( P_LUT[k] > 1.e-15):
             if( P_range[k] == 1.):
                 #Peak_Voltage = E_to_V_signal(Peak_E_field[k], Gain_dB, Nphased)
                 Peak_Voltage_SNR[k] = Peak_Voltage / Noise_Voltage
                 if(Peak_Voltage_SNR[k] > threshold_voltage_snr):
-                    #print len(triggered_events), 'Peak_Voltage %1.2e, Noise_Voltage %1.2e, SNR %1.2e, View_angle %1.2f'%(Peak_Voltage, Noise_Voltage, Peak_Voltage_SNR, exit_view_angle[k]*180./np.pi)
                     P_det[k] = 1.
                     triggered_events.append(np.array( [ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_Voltage[k], exit_view_angle[k]*180./np.pi, decay_view_angle[k]*180./np.pi,  zenith_angle[k]*180./np.pi ]))
-                    #
-		    #print LUT_E_tau[idx]
-                    #print '%1.2f'%tau_energy
-                #else:
-                #    print "Didn't trigger on ", 'Peak_Voltage %1.2e, Noise_Voltage %1.2e, SNR %1.2e, View_angle %1.2f'%(Peak_Voltage, Noise_Voltage, Peak_Voltage_SNR, exit_view_angle[k]*180./np.pi)
-	    #else:
-	    	#print "\t", k, " didn't pass range cut", P_det[k]
-        sum_P_exit                += P_LUT[k]
+        
+	sum_P_exit                += P_LUT[k]
         sum_P_exit_P_range        += P_LUT[k] * P_range[k]
         sum_P_exit_P_range_P_det  += P_LUT[k] * P_range[k] * P_det[k]
 	
@@ -497,7 +487,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
                             A_Omega_exit     = A_Omega*sum_P_exit/float(N_cut),
                             A_Omega_range    = A_Omega*sum_P_exit_P_range/float(N_cut),
                             A_Omega_trig     = A_Omega*sum_P_exit_P_range_P_det/float(N_cut),
-                            log10_tau_energy = log10_tau_energy,
+			    noise_voltage    = Noise_Voltage,
                             triggered_events = np.array(triggered_events),
                             )
                             #all_events = np.array(all_events))
