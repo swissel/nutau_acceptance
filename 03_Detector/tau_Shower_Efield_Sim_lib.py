@@ -56,7 +56,7 @@ def noise_v_sq(freq_MHz, Z_L, Z_A, Gain_dB, Nphased=1):
 def noise_voltage(freq_min_MHz, freq_max_MHz, df,  Z_L, Z_A, Gain_dB, Nphased=1.):
     # TODO: Include reflection losses at the antennas as (1-Gamma^2)
     gal_noise = np.sqrt(np.sum(noise_v_sq(np.arange(freq_min_MHz, freq_max_MHz + df, df), Z_L, R_L, Gain_dB, Nphased)*1e6 * df )) 
-    sys_noise = np.sqrt( kB_W_Hz_K * (T_sys) * (freq_max_MHz - freq_min_MHz)*1e6 * Z_L)*Nphased
+    sys_noise = np.sqrt( kB_W_Hz_K * (T_sys) * (freq_max_MHz - freq_min_MHz)*1e6 * Z_L * Nphased)
     
     # this is in V^2/Hz
     T_gal = galactic_temperature(np.arange(freq_min_MHz, freq_max_MHz + df, df))[1]
@@ -126,11 +126,44 @@ def E_field_interp(view_angle_deg, zenith_angle_deg, f_Lo, f_High, log10_tau_ene
     E_field *= distance_exit_km/distance_decay_km   # distance to tau decay point correction
     E_field *= 10**(log10_tau_energy - 17.) # Energy scaling
     return E_field
+####################################################################################
+
+
+def Voltage_interp(view_angle_deg, zenith_angle_deg, f_Lo, f_High, log10_tau_energy, distance_exit_km, distance_decay_km, Gain_dB, Nphased=1):
+    # Lorentzian beam pattern based on 10-MHz filtered subbands of Harm's results
+    # Returns electric field peak in V/m
+  
+    # Since the efields are stored in 10-MHz subbands
+    # integrate over the range from f_Lo to f_High in 10-MHz bands
+    Voltage = np.zeros(len(distance_decay_km))
+    #E_field = 0.
+    # TODO: Right now forcing the parameters outside the interpolation range to the edges
+    # shoudl replace with extrapolation
+    z = zenith_angle_deg.copy()
+    v = view_angle_deg.copy()
+    z[z>87.] = 87.
+    z[z<60.] = 60.
+    v[v<0.04] = 0.04
+    v[v>3.16] = 3.16
+
+    df = 10.
+    for freq in np.arange(f_Lo, f_High, df):
+        i_f_Lo = int(round(freq / df - 1))
+	# using the average frequency in the bin to calculate the voltage
+	Voltage += E_to_V(efield_interpolator_list[i_f_Lo](z,v), Gain_dB, (freq+df)/2., Nphased)
+	
+    # account for ZHAIReS sims only extending to 3.16 deg 
+    #TODO: right now sampling a gaussian centered at zero to extrapolate to the wider angles. Should verify with ZHAireS sims out to wider angles
+    Voltage[view_angle_deg>3.16] = Voltage[view_angle_deg>3.16]*np.exp( -(view_angle_deg[view_angle_deg>3.16]-0.)**2 / (2*3.16)**2)
+    
+    Voltage *= distance_exit_km/distance_decay_km   # distance to tau decay point correction
+    Voltage *= 10**(log10_tau_energy - 17.) # Energy scaling
+    return Voltage
 
 ####################################################################################
 
-def E_to_V_signal(E_pk, Gain_dB, Nphased=1):
-    return E_pk * (speed_of_light*1.e3)/300.e6 * np.sqrt(50./377. * pow(10., Gain_dB/10.)/4/np.pi) * Nphased
+def E_to_V_signal(E_pk, Gain_dB, freq, Nphased=1):
+    return E_pk * (speed_of_light*1.e3)/freq * np.sqrt(R_L/Z_0 * pow(10., Gain_dB/10.)/4./np.pi) * Nphased
 
 ####################################################################################
 
@@ -407,20 +440,23 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
 
     # Calculate the electric field by summing the interpolated electric fields in 10-MHz subbands
     # perform array-wise interpolations (outside of the event loop) to minimize number of computations. 
-    Peak_E_field = E_field_interp(decay_view_angle*180./np.pi, zenith_angle*180./np.pi, f_Lo, f_High, log10_tau_energy, dist_exit_to_detector, dist_decay_to_detector)
-    #Peak_E_field = E_field_interp(decay_view_angle*180./np.pi, zenith_angle*180./np.pi, f_Lo, f_High, log10_tau_energy, dist_decay_to_detector)
-    #Peak_E_field = E_field_interp(decay_view_angle*180./np.pi, zenith_angle*180./np.pi, f_Lo, f_High, log10_tau_energy, dist_decay_to_detector)
-    ####OLD: Peak_E_field = E_field_interp(decay_view_angle*180./np.pi, (np.pi/2. - exit_view_angle)*180./np.pi, f_Lo, f_High, log10_tau_energy, dist_decay_to_detector)
-    #####DEBUG: Peak_E_field = np.zeros(len(GEOM_theta_exit)) + Noise_Voltage * 100.;
+    # 
+    # Voltage is calculated in three steps:
+    #	1. Interpolate electric field from ZHAireS simulations in 10 MHz bins
+    #   2. Convert electric field to voltage based on detector model (gain, nphased, 
+    #   3. Sum over all 10-MHz bins in the desired frequency band (f_Lo to f_High)
+
+    Peak_Voltage = Voltage_interp(decay_view_angle*180./np.pi, zenith_angle*180./np.pi, f_Lo, f_High, log10_tau_energy, dist_exit_to_detector, dist_decay_to_detector, Gain_dB, Nphased)
+    
     for k in range(0,len(GEOM_theta_exit)):
         if( P_LUT[k] > 1.e-15):
             if( P_range[k] == 1.):
-                Peak_Voltage = E_to_V_signal(Peak_E_field[k], Gain_dB, Nphased)
+                #Peak_Voltage = E_to_V_signal(Peak_E_field[k], Gain_dB, Nphased)
                 Peak_Voltage_SNR[k] = Peak_Voltage / Noise_Voltage
                 if(Peak_Voltage_SNR[k] > threshold_voltage_snr):
                     #print len(triggered_events), 'Peak_Voltage %1.2e, Noise_Voltage %1.2e, SNR %1.2e, View_angle %1.2f'%(Peak_Voltage, Noise_Voltage, Peak_Voltage_SNR, exit_view_angle[k]*180./np.pi)
                     P_det[k] = 1.
-                    triggered_events.append(np.array( [ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_E_field[k], Peak_Voltage_SNR[k], exit_view_angle[k]*180./np.pi, P_LUT[k], GEOM_theta_exit[k], decay_view_angle[k]*180./np.pi,  zenith_angle[k]*180./np.pi ]))
+                    triggered_events.append(np.array( [ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_Voltage[k], exit_view_angle[k]*180./np.pi, decay_view_angle[k]*180./np.pi,  zenith_angle[k]*180./np.pi ]))
                     #
 		    #print LUT_E_tau[idx]
                     #print '%1.2f'%tau_energy
@@ -441,7 +477,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
             print '\t %1.3e km^2 sr'%(A_Omega*sum_P_exit_P_range_P_det / float(k) )
             print '\t ',np.array(triggered_events).shape
             print ''
-        #all_events.append([ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_E_field[k], Peak_Voltage_SNR[k], exit_view_angle[k]*180./np.pi, P_LUT[k], GEOM_theta_exit[k], decay_view_angle[k]*180./np.pi,  zenith_angle[k]*180./np.pi ])
+        #all_events.append([ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_Voltage[k], Peak_Voltage_SNR[k], exit_view_angle[k]*180./np.pi, P_LUT[k], GEOM_theta_exit[k], decay_view_angle[k]*180./np.pi,  zenith_angle[k]*180./np.pi ])
 
     print 'After all %d events, %d events triggered: '%(len(GEOM_theta_exit), len(triggered_events))
     print '\t %1.3e km^2 sr'%(A_Omega)
