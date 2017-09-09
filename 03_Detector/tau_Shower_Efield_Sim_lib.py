@@ -81,7 +81,7 @@ def tau_lepton_decay_range(tau_lepton_energy):
     return speed_of_light * 10**(tau_lepton_energy)  / tau_mass * tau_life_time
 
 ####################################################################################
-def load_efield_interpolator(h, EFIELD_LUT_file_name=os.environ['TAU_ACC_ZHAIRES_DIR'] + '/interpolator_efields_%dkm.npz'):
+def load_efield_interpolator(EFIELD_LUT_file_name):
     # the interpolator is for 10-MHz subbands and 
     # is called as interpolator(zenith_angle, starting_frequency,psi_angle)
     # zenith angle is the shower zenith angle in deg.
@@ -92,7 +92,7 @@ def load_efield_interpolator(h, EFIELD_LUT_file_name=os.environ['TAU_ACC_ZHAIRES
     return interp_file['efield_interpolator_list'][()]
 ####################################################################################
 
-def E_field_interp(view_angle_deg, zenith_angle_deg, f_Lo, f_High, log10_tau_energy, distance_exit_km, distance_decay_km):
+def E_field_interp(efield_interpolator_list, view_angle_deg, zenith_angle_deg, f_Lo, f_High, log10_tau_energy, distance_exit_km, distance_decay_km):
     # Lorentzian beam pattern based on 10-MHz filtered subbands of Harm's results
     # Returns electric field peak in V/m
   
@@ -104,16 +104,11 @@ def E_field_interp(view_angle_deg, zenith_angle_deg, f_Lo, f_High, log10_tau_ene
     # shoudl replace with extrapolation
     z = zenith_angle_deg.copy()
     v = view_angle_deg.copy()
-    z[z>87.] = 87.
-    z[z<60.] = 60.
+    z[z>89.] = 89.
+    z[z<55.] = 55.
     v[v<0.04] = 0.04
     v[v>3.16] = 3.16
 
-    #zenith_angle_deg[zenith_angle_deg > 87.] = 87.
-    #zenith_angle_deg[zenith_angle_deg < 60.] = 60.
-    #view_angle_deg[view_angle_deg < 0.04] = 0.04
-    #view_angle_deg[view_angle_deg > 3.16 ] = 3.16
-    #print E_field, zenith_angle_deg, view_angle_deg
     df = 10.
     for freq in np.arange(f_Lo, f_High, df):
         i_f_Lo = int(round(freq / df - 1))
@@ -129,7 +124,7 @@ def E_field_interp(view_angle_deg, zenith_angle_deg, f_Lo, f_High, log10_tau_ene
 ####################################################################################
 
 
-def Voltage_interp(view_angle_deg, zenith_angle_deg, f_Lo, f_High, log10_tau_energy, distance_exit_km, distance_decay_km, Gain_dB, Nphased=1):
+def Voltage_interp(efield_interpolator_list, view_angle_deg, zenith_angle_deg, f_Lo, f_High, log10_tau_energy, distance_exit_km, distance_decay_km, Gain_dB, Nphased=1):
     # Lorentzian beam pattern based on 10-MHz filtered subbands of Harm's results
     # Returns electric field peak in V/m
   
@@ -141,8 +136,8 @@ def Voltage_interp(view_angle_deg, zenith_angle_deg, f_Lo, f_High, log10_tau_ene
     # shoudl replace with extrapolation
     z = zenith_angle_deg.copy()
     v = view_angle_deg.copy()
-    z[z>87.] = 87.
-    z[z<60.] = 60.
+    z[z>89.] = 89.
+    z[z<55.] = 55.
     v[v<0.04] = 0.04
     v[v>3.16] = 3.16
 
@@ -150,7 +145,7 @@ def Voltage_interp(view_angle_deg, zenith_angle_deg, f_Lo, f_High, log10_tau_ene
     for freq in np.arange(f_Lo, f_High, df):
         i_f_Lo = int(round(freq / df - 1))
 	# using the average frequency in the bin to calculate the voltage
-	Voltage += E_to_V(efield_interpolator_list[i_f_Lo](z,v), Gain_dB, (freq+df)/2., Nphased)
+	Voltage += E_to_V_signal(efield_interpolator_list[i_f_Lo](z,v), Gain_dB, (freq+df)/2., Nphased)
 	
     # account for ZHAIReS sims only extending to 3.16 deg 
     #TODO: right now sampling a gaussian centered at zero to extrapolate to the wider angles. Should verify with ZHAireS sims out to wider angles
@@ -269,6 +264,29 @@ def decay_point_geom(k_x, k_y, k_z, x_exit, y_exit, z_exit, X0_decay, x_det, y_d
 
 ####################################################################################
 
+def distance_detector_to_ground(zenith_angle_rad, ground_elevation, detector_altitude):
+	''' Calculates the distance from the exit point to the detector assuming that the Earth has an average radius up to sea level
+	    plus the ground_elevation (i.e. the ice or water thickness) .The distance, d, is the given by the spherical earth distance
+	    between the two points, which can be calculated from the law of cosines with three legs of a triangle:
+	    	1. d sin theta
+		2. R_Earth + z_g  + d cos theta 
+		3. R_Earth + h_det
+		Note that legs 1 & 2 are orthogonal
+
+	Inputs: zenith_angle_rad: Zenith angle in radians of exit (theta above)
+		ground_elevation: thickness of the ground above sea level (z_g above, in km because the Earth radius is in km)
+		detector_altitude: location of the detector in km above sea level.
+	'''
+	a = 1.
+	b = 2.* np.cos(zenith_angle_rad) * ( Earth_radius + ground_elevation)
+	c = (Earth_radius + ground_elevation)**2 - (Earth_radius + detector_altitude)**2
+
+	d = (-b + np.sqrt(b**2 - 4.*a*c) )/(2.*a)
+	return d
+	
+####################################################################################
+
+
 def GEOM(altitude, num_events, view_angle_cut_deg = 5.):
     ##############################################
     # STEPS
@@ -363,7 +381,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     A_Omega = A_geom* float(N_cut) / float(N_tot)
     # TODO: fix to calculate dist_to_detector from decay point rather than from
     # the exit point which is what it is now.
-    dist_exit_to_detector = get_distance_to_detector(x_exit, y_exit, z_exit, x_det, y_det, z_det)[view_cut]  #np.sqrt( x_exit**2 + (z_exit - altitude - Earth_radius)**2 ) [view_cut]
+    dist_exit_to_detector = get_distance_to_detector(x_exit, y_exit, z_exit, x_det, y_det, z_det)[view_cut] 
     GEOM_theta_exit = np.arccos(cos_theta_exit[view_cut])*180./np.pi
     exit_view_angle = exit_view_angle[view_cut] #radians
     zenith_angle = np.arccos(cos_theta_exit) # radians
@@ -404,9 +422,10 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     P_det = np.zeros(len(x_exit[view_cut]))   # zero until it is proven to be detectable
 
 
-    # 6. Load the Efield interpolator for this altitude
+    # 6. Load the Efield interpolator for this altitude 
+    #    N. B.: EField_LUT_file_name should have the altitude in the file name
     global efield_interpolator_list
-    efield_interpolator_list = load_efield_interpolator(altitude, EFIELD_LUT_file_name)
+    efield_interpolator_list = load_efield_interpolator(EFIELD_LUT_file_name)
     
     # 7. Loop Through Geometry Events
     sum_P_exit = 0.
@@ -442,14 +461,14 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     #   2. Convert electric field to voltage based on detector model (gain, nphased, 
     #   3. Sum over all 10-MHz bins in the desired frequency band (f_Lo to f_High)
 
-    Peak_Voltage = Voltage_interp(decay_view_angle*180./np.pi, zenith_angle*180./np.pi, f_Lo, f_High, log10_tau_energy, dist_exit_to_detector, dist_decay_to_detector, Gain_dB, Nphased)
+    Peak_Voltage = Voltage_interp( efield_interpolator_list, decay_view_angle*180./np.pi, zenith_angle*180./np.pi, f_Lo, f_High, log10_tau_energy, dist_exit_to_detector, dist_decay_to_detector, Gain_dB, Nphased)
     
     # 9. Check for trigger at the detector
     for k in range(0,len(GEOM_theta_exit)):
         if( P_LUT[k] > 1.e-15):
             if( P_range[k] == 1.):
                 #Peak_Voltage = E_to_V_signal(Peak_E_field[k], Gain_dB, Nphased)
-                Peak_Voltage_SNR[k] = Peak_Voltage / Noise_Voltage
+                Peak_Voltage_SNR[k] = Peak_Voltage[k] / Noise_Voltage
                 if(Peak_Voltage_SNR[k] > threshold_voltage_snr):
                     P_det[k] = 1.
                     triggered_events.append(np.array( [ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_Voltage[k], exit_view_angle[k]*180./np.pi, decay_view_angle[k]*180./np.pi,  zenith_angle[k]*180./np.pi ]))
