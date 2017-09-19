@@ -157,8 +157,8 @@ def Voltage_interp(efield_interpolator_list, view_angle_deg, zenith_angle_deg, f
 
 ####################################################################################
 
-def E_to_V_signal(E_pk, Gain_dB, freq, Nphased=1):
-    return E_pk * (speed_of_light*1.e3)/freq * np.sqrt(R_L/Z_0 * pow(10., Gain_dB/10.)/4./np.pi) * Nphased
+def E_to_V_signal(E_pk, Gain_dB, freq_MHz, Nphased=1):
+    return 2 * E_pk * (speed_of_light*1.e3)/(freq_MHz * 1.e6) * np.sqrt(R_L/Z_0 * pow(10., Gain_dB/10.)/4./np.pi) * Nphased
 
 ####################################################################################
 
