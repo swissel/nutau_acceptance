@@ -158,7 +158,15 @@ def Voltage_interp(efield_interpolator_list, view_angle_deg, zenith_angle_deg, f
 ####################################################################################
 
 def E_to_V_signal(E_pk, Gain_dB, freq_MHz, Nphased=1):
-    return 2 * E_pk * (speed_of_light*1.e3)/(freq_MHz * 1.e6) * np.sqrt(R_L/Z_0 * pow(10., Gain_dB/10.)/4./np.pi) * Nphased
+    # Derived assuming:
+    #		P_r   : the power received at the antenna P_r = A P_inc = |V_A|^2/(8 R_A) = V_A  Z_L / (Z_L + Z_A) 
+    #			Note: V_A = 2 V_L for a perfectly matched antenna -- which we assume here
+    #		P_inc : incident power at the antenna P_inc = |E|^2 / (2 Z_0) 
+    #		A : antenna aperture = \lambda^2/(4pi) G eff_load eff_pol 
+    #		eff_load: load mismatch factor eff_load = (1 - Gamma^2), where Gamma is the reflection coefficient = (Z_L - Z_A*)/(Z_L + A_Z);	assuming that we have a perfect match
+    #		eff_pol : polarization mismatch factor; assuming that this is built into ZHAireS pulses
+    
+    return E_pk * (speed_of_light*1.e3)/(freq_MHz * 1.e6) * np.sqrt(R_L/Z_0 * pow(10., Gain_dB/10.)/4./np.pi) * Nphased
 
 ####################################################################################
 
