@@ -1,0 +1,370 @@
+import csv
+import pandas as pd
+import numpy as np
+#import filters  # THIS LIBRARY IS NOT INCLUDED IN THE REPOSITORY
+import matplotlib.pyplot as pyp
+import scipy.signal as signal
+import numpy.fft as fft
+import os         # ADD THIS SO WE CAN USE ENVIRONMENT VARIABLES
+import matplotlib
+from scipy.optimize import curve_fit
+import scipy.optimize
+from scipy.interpolate import interp1d
+import sys
+import argparse
+import skimage
+from skimage.filters import gaussian
+#%matplotlib inline
+
+#print os.environ
+print os.environ.get('TAU_ACC_ZHAIRES_DIR')
+#print os.environ['TAU_ACC_ZHAIRES_DIR']
+
+pastel_colors = ['#FF6666','#FFCC66','#CCFF66','#66FF66','#66FFCC','#66FFFF','#66CCFF','#6666FF','#CC66FF','#FF66FF','#FF6FCF']
+bright_colors = ['#FF0000','#FF8000','#FFFF00','#80FF00','#00FF00','#00FF80','#00FFFF','#0080FF','#0000FF','#8000FF','#FF00FF']
+bright_colors2 = bright_colors = ['#FF0000','#FF8000','#80FF00','#00FF80','#0080FF','#0000FF','#8000FF','#FF00FF','#FF0080']
+pyp.rcParams['font.size']=12
+pyp.rcParams['legend.labelspacing'] = 0.1
+cmap = matplotlib.cm.get_cmap('inferno')
+
+###########################################################
+def read_npz_files(antenna_height, zenith):
+    npzfile = np.load(os.environ['TAU_ACC_ZHAIRES_DIR'] + "/" + "altitude_%dkm_zenith_%d.npz"%(antenna_height, zenith))
+    efield_td = npzfile['efield_td'][()] ## for some reason just reading the arrays gives a 0-dim array, so skip this.
+    efield_fd = npzfile['efield_fd'][()]
+    return efield_td, efield_fd
+
+###########################################################
+# WANT TO INTERPOLATE THE EFIELDS AT
+# ALL ZENITH ANGLES, PSI ANGLES, and STARTING FREQUENCYS
+# FOR 10-MHz SUBBANDS
+
+def band_peak_efield(efield, freq, f_LO, bandwidth):
+    df = freq[1]-freq[0]
+    cut = np.logical_and(freq>=f_LO, freq<=f_LO + bandwidth)
+    # factor of two comes from spectrum
+    return 2*np.sum(np.abs(efield[cut]))*df
+
+def efield_vs_angle(h, z, f_Lo_list, bandwidth):
+
+    off_angle_array = np.arange(0.0,80*0.04, 0.04)
+    i_off_angle_array = range(0, len(off_angle_array))
+    epeak_list = np.zeros((len(f_Lo_list), len(i_off_angle_array)))
+    cc = 0
+    for i_offangle in i_off_angle_array:
+        #if(i_offangle%10==0): print i_offangle
+        offangle = off_angle_array[i_offangle]
+        efield_td, efield_fd = read_npz_files(h,z)
+        efield = efield_td[i_offangle]['y_v_per_m']
+        time = efield_td[i_offangle]['time_s']
+        time -= time[0]
+        dt = np.abs(time[1]-time[0])
+        E_fft = np.fft.rfft(efield)*dt*1.e6 # use dt in \mirco-s so that fft is in units of V/m/MHz
+        fr = np.fft.rfftfreq(len(efield), dt*1.e6) # frequencies in MHz
+        for i_f_Lo in range(0,len(f_Lo_list)):
+            f_Lo = f_Lo_list[i_f_Lo]
+            epeak_list[i_f_Lo, cc] = band_peak_efield(E_fft, fr, f_Lo, bandwidth)
+        cc+=1
+    return off_angle_array, epeak_list
+
+###########################################################
+# Construct an array of the peak efield for a range of starting frequencies
+# and bandwidths and psi angles
+def construct_epeak_array(h):
+	zenith_list = np.array([55, 60, 65, 70, 75, 80, 85, 87, 89])
+	f_Lo_list = np.arange(10., 1610., 10.)
+	bandwidth = 10.
+
+	###
+	# Construct an array of the peak efield for a range of starting frequencies
+	# and bandwidths and psi angles
+	## Shape of the array is 
+	##  [zenith angle [55,65,60,70,75,80,85,87,89 starting_frequency (10-1600 MHz in 10 MHz steps), bandwidth (10 MHz), off_angles (0.04-3.2 in 0.04 deg steps)]
+
+	epeak_array = []
+	for z in zenith_list:
+	    psi_list, epeak_list = efield_vs_angle(h, z, f_Lo_list, bandwidth)
+	    epeak_array.append(epeak_list)
+	    
+	epeak_array = np.array(epeak_array)
+
+	return zenith_list, psi_list, f_Lo_list, epeak_array
+
+###########################################################
+def epeak_zenith_angle_slice(i_ze, epeak_array):
+    return epeak_array[i_ze,:, :] 
+def epeak_start_freq_slice(i_f_Lo, epeak_array):
+    return epeak_array[:,i_f_Lo,:] 
+def epeak_psi_angle_slice(i_psi, epeak_array):
+    return epeak_array[:,:,i_psi] 
+
+###########################################################
+def  clean_numerical_noise_zenith(h, epeak_array, zenith_list, psi_list, f_Lo_list, i_ze, gauss_blur_sigma = 2.5, ncontours = 10, plot_suffix=""):
+	### Use gaussian blur to set mask
+	ze = zenith_list[i_ze]
+	titles = ["Emergence Angle %d deg."%(90.-int(ze)) for ze in zenith_list]
+	fig = pyp.figure(figsize=(12,8))
+	pyp.subplots_adjust(hspace=0.3, wspace=0.3)
+	pyp.suptitle(titles[i_ze], fontsize=18)
+
+	# set up the 2-d histogram
+	p, start_freq = np.meshgrid(psi_list, f_Lo_list)
+	#epeak_array[i_ze,:, :] 
+	H = epeak_zenith_angle_slice(i_ze, epeak_array)
+	Hmasked = np.ma.masked_where(H==0,H) # Mask pixels with a value of zero
+
+	# plot the 2-d histogram
+	pyp.subplot(2, 2, 1)
+	pyp.pcolormesh( p,start_freq, np.log10(Hmasked), cmap='inferno', )
+	pyp.xlim(psi_list.min(), psi_list.max())
+	pyp.ylim(f_Lo_list.min(), f_Lo_list.max())
+	pyp.colorbar(label="log$_{10}$(Peak E-field (V/m))")
+	pyp.xlabel(r'$\theta_{view}$ (deg.)')
+	pyp.ylabel('Start Frequency (MHz)')
+	pyp.grid(True, which='both')
+	pyp.title("Original")
+
+	# construct a Gaussian blur
+	pyp.subplot(2, 2, 2)
+	Hgauss_blur = gaussian(Hmasked, sigma=gauss_blur_sigma)
+	pyp.pcolormesh( p,start_freq, np.log10(Hgauss_blur), cmap='inferno', )
+	pyp.xlim(psi_list.min(), psi_list.max())
+	pyp.ylim(f_Lo_list.min(), f_Lo_list.max())
+	pyp.colorbar(label="log$_{10}$(Peak E-field (V/m))")
+	pyp.xlabel(r'$\theta_{view}$ (deg.)')
+	pyp.ylabel('Start Frequency (MHz)')
+	pyp.grid(True, which='both')
+	pyp.title("Gaussian Blurred Mask")
+
+	# find the contours:
+	CS = pyp.contour(p,start_freq, np.log10(Hgauss_blur),ncontours)
+
+	# Decide which contour to keep
+	num_contour_segs = np.array([len(CS.allsegs[i]) for i in range(len(CS.allsegs))])
+	len_contour_segs = np.zeros(len(num_contour_segs))
+	for i in range(len(CS.allsegs)):
+	    for j in range(len(CS.allsegs[i])):
+		len_contour_segs[i] += len(CS.allsegs[i][j])
+
+	# if the mean is within 2*rms on both sides then keep up to 2 segments
+	# if not keep only one segment
+	max_num_contour_segments = 2
+	upper_right = np.log10(Hmasked[-20:-1, -20:-1] )
+	upper_left = np.log10(Hmasked[-20:-1, 0:20])
+	#print "upper right", np.abs(np.mean(upper_right)), np.std(upper_right)
+	#print "upper left", np.abs(np.mean(upper_left)), np.std(upper_left)
+	#print np.abs(np.mean(upper_left)), " <?", np.abs(np.mean(upper_right)) - 5*np.std(upper_right)
+
+	# if the upper left quadrant is higher than the upper right quadrant
+	if np.abs(np.mean(upper_left)) + 2*np.std(upper_left)< np.abs(np.mean(upper_right)) :
+	    max_num_contour_segments = 1
+	    
+	# reject contours that are 50% lower than or 200% higher than the mean 
+	# to get rid of small islands and really jagged contours
+	i=0
+	c=0
+	while( (len_contour_segs[c] < 0.5*np.mean(len_contour_segs) or
+		len_contour_segs[c] > 2.*np.mean(len_contour_segs)) or
+		num_contour_segs[i] > max_num_contour_segments):
+	    #print "in while", c, np.where(num_contour_segs < max_num_contour_segments)[0][c]
+	    i = np.where(num_contour_segs <= max_num_contour_segments)[0][c]
+	    c+=1
+	i = np.where(num_contour_segs <= max_num_contour_segments)[0][c]
+	level = CS.levels[i]
+
+	# plot the cleaned 2-d histogram
+	pyp.subplot(2, 2, 3)
+
+	# Mask pixels less than the average of the noise
+	Hmasked2 = np.ma.masked_where(np.log10(Hgauss_blur)<level,Hmasked) 
+	pyp.pcolormesh( p,start_freq, np.log10(Hmasked2), cmap='inferno', )
+	pyp.xlim(psi_list.min(), psi_list.max())
+	pyp.ylim(f_Lo_list.min(), f_Lo_list.max())
+	pyp.colorbar(label="log$_{10}$(Peak E-field (V/m))")
+	pyp.xlabel(r'$\theta_{view}$ (deg.)')
+	pyp.ylabel('Start Frequency (MHz)')
+	pyp.grid(True, which='both')
+	pyp.title("Cleaned log scale")
+
+	# Mask pixels less than the average of the noise
+	pyp.subplot(2, 2, 4)
+	pyp.pcolormesh( p,start_freq, Hmasked2*1e6, cmap='inferno', )
+	pyp.xlim(psi_list.min(), psi_list.max())
+	pyp.ylim(f_Lo_list.min(), f_Lo_list.max())
+	pyp.colorbar(label="Peak E-field ($\mu$V/m)")
+	pyp.xlabel(r'$\theta_{view}$ (deg.)')
+	pyp.ylabel('Start Frequency (MHz)')
+	pyp.grid(True, which='both')
+	pyp.title("Cleaned linear scale")
+	
+	# Save the cleaned image
+	pyp.savefig(os.environ['TAU_ACC_DETECTOR_PLOTS_DIR'] + "/efield_maps_altitude%dkm_ze%d_cleaning%s.png"
+			%(h, int(ze), plot_suffix ) )
+
+	epeak_array[i_ze,:, :] = Hmasked2
+	return epeak_array
+
+def clean_numerical_noise(h, epeak_array, zenith_list, psi_list, f_Lo_list, gauss_blur_sigma = 2.5, ncontours = 10, plot_suffix=""):	
+	for i_ze in range(len(zenith_list)):
+		epeak_array = clean_numerical_noise_zenith(h, epeak_array, zenith_list, psi_list, f_Lo_list, i_ze, gauss_blur_sigma = 2.5, ncontours = 10)
+	return epeak_array
+
+###########################################################
+def plot_epeak_zenith_psi(h,epeak_array, zenith_list, psi_list, choose_start_freq, plot_suffix=""):
+	### Plot epeak vs zenith angle vs psi angle for fixed starting frequ(ency
+	#choose_start_freq = [10., 30., 50., 200., 300., 1000.]
+	#ind = [1, 3, 5, 8, 20, 30]
+	titles = ["%d MHz"%(freq) for freq in choose_start_freq]
+	fig = pyp.figure(1, figsize=(12,8))
+	pyp.subplots_adjust(hspace=0.3, wspace=0.4)
+
+	choose_start_freq = [10., 30., 50., 200., 300., 1000.]
+	titles = ["%d MHz"%(freq) for freq in choose_start_freq]
+	fig = pyp.figure(1, figsize=(12,8))
+	pyp.subplots_adjust(hspace=0.3, wspace=0.4)
+
+	for i,freq in enumerate(choose_start_freq):
+	    i_f_Lo = int(freq/10)
+	    ax = pyp.subplot(2,3,i+1)
+	    #ax.set_xscale('log')
+	    #ax.set_yscale('log')
+	    p, zenith = np.meshgrid( psi_list, zenith_list)
+	    #H=epeak_array[:, ind[i_f_Lo], 0, :]*1e6
+	    H = epeak_start_freq_slice(i_f_Lo, epeak_array)*1e6
+	    Hmasked = np.ma.masked_where(H==0,H) # Mask pixels with a value of zero
+	    pyp.pcolormesh(p, zenith, Hmasked, cmap='inferno', )
+	    pyp.ylim(zenith_list.min(), zenith_list.max()+1)
+	    pyp.xlim(psi_list.min(), psi_list.max())
+	    pyp.colorbar(label="Peak E-field ($\mu V/m$)")
+	    pyp.ylabel('Zenith Angle (deg.)')
+	    pyp.xlabel('$\psi$ (deg.)')
+	    pyp.grid(True, which='both')
+	    pyp.title(titles[i])
+	pyp.savefig(os.environ['TAU_ACC_DETECTOR_PLOTS_DIR'] + "/efield_maps_altitude%dkm_ze_vs_psi%s.png"%(h, plot_suffix) )
+
+###########################################################
+def plot_epeak_zenith_start_freq(h,epeak_array, zenith_list, f_Lo_list, choose_psi, plot_suffix=""):
+	### Second plot will be epeak vs zenith angle vs starting frequency for fixed psi angle
+	ind = [0, 11, 27, 35, 47, 63]
+	#choose_psi = psi_list[ind]
+	titles = ["$\psi$=%2.2f deg."%(p) for p in choose_psi]
+	fig = pyp.figure(1, figsize=(12,8))
+	pyp.subplots_adjust(hspace=0.3, wspace=0.4)
+
+	for i, p in enumerate(choose_psi):
+	    i_psi = ind[i]
+	    ax = pyp.subplot(2,3,i+1)
+	    ax.set_xscale('log')
+	    #ax.set_yscale('log')
+	    start_freq, zenith = np.meshgrid(  f_Lo_list, zenith_list)
+	    #H=epeak_array[:, :, 0, i_psi]*1e6
+	    H = epeak_psi_angle_slice(i_psi, epeak_array)*1e6
+	    Hmasked = np.ma.masked_where(H==0,H) # Mask pixels with a value of zero
+	    pyp.pcolormesh(start_freq, zenith, Hmasked, cmap='inferno', )
+	    pyp.ylim(zenith_list.min(), zenith_list.max())
+	    pyp.xlim(f_Lo_list.min(), f_Lo_list.max())
+	    pyp.colorbar(label="Peak E-field ($\mu V/m$)")
+	    pyp.ylabel('Zenith Angle (deg.)')
+	    pyp.xlabel('Starting Frequency (MHz)')
+	    pyp.grid(True, which='both')
+	    pyp.title(titles[i])
+	pyp.savefig(os.environ['TAU_ACC_DETECTOR_PLOTS_DIR'] + "/efield_maps_altitude%dkm_startfreq_vs_ze%s.png"%(h, plot_suffix) )
+
+###########################################################
+def plot_epeak_start_freq_psi(h,epeak_array, f_Lo_list, psi_list, choose_zenith, plot_suffix=""):
+	### Third plot will be epeak vs starting frequency vs psi_list for fixed psi angles
+	#ind = [0,1,2,3,4,5,6,7,8]
+	#choose_zenith = zenith_list[ind]
+	titles = ["Zenith %d deg."%(int(z)) for z in choose_zenith]
+	fig = pyp.figure(1, figsize=(12,8))
+	pyp.subplots_adjust(hspace=0.5, wspace=0.5)
+
+	for i_ze, ze in enumerate(choose_zenith):
+	    ax = pyp.subplot(3,3,i_ze+1)
+	    #ax.set_xscale('log')
+	    ax.set_yscale('log')
+	    p, start_freq = np.meshgrid(psi_list, f_Lo_list)
+	    #H=epeak_array[i_ze, :, 0, :]*1e6
+	    H = epeak_zenith_angle_slice(i_ze, epeak_array)*1e6
+	    Hmasked = np.ma.masked_where(H==0,H) # Mask pixels with a value of zero
+	    pyp.pcolormesh( p,start_freq, Hmasked, cmap='inferno', )
+	    pyp.xlim(psi_list.min(), psi_list.max())
+	    pyp.ylim(f_Lo_list.min(), f_Lo_list.max())
+	    pyp.colorbar(label="Peak E-field ($\mu V/m$)")
+	    pyp.xlabel('$\psi$ (deg.)')
+	    pyp.ylabel('Start Frequency (MHz)')
+	    pyp.grid(True, which='both')
+	    pyp.title(titles[i_ze])
+	pyp.savefig(os.environ['TAU_ACC_DETECTOR_PLOTS_DIR'] + "/efield_maps_altitude%dkm_startfreq_psi%s.png"%(h, plot_suffix) )
+
+###########################################################
+def write_interpolator_file(h, epeak_array, f_Lo_list, psi_list, zenith_list ):
+	#############
+	# Save interpolators for ever frequency step. The interpolation variables are zenith angle (55-89 degrees) and psi/off-angle (0-3.2 deg)
+	interp_file = open(os.environ['TAU_ACC_ZHAIRES_DIR']\
+			       +'/interpolator_efields_%dkm.npz'%h, 'w')
+
+	interpolator_list = []
+	for i_f_Lo, f_Lo in enumerate(f_Lo_list):
+	    zz,  pp = np.meshgrid(zenith_list, psi_list)
+	    interpolator = scipy.interpolate.LinearNDInterpolator(
+		np.vstack((zz.flatten(), pp.flatten())).T, 
+			  epeak_array[:,i_f_Lo,:].T.flatten()
+			     )
+	    interpolator_list.append(interpolator)
+	np.savez(interp_file, efield_interpolator_list=interpolator_list)
+	interp_file.close()
+
+###########################################################
+def clean_full_set(args):
+	# read CSV pulse files and calculate the frequency-domain peak electric field
+	zenith_list, psi_list, f_Lo_list, epeak_array = construct_epeak_array(args.altitude)
+
+	# plot slices
+	choose_start_freq = [10., 30., 50., 200., 300., 1000.]
+	ind = [0, 11, 27, 35, 47, 63]
+	choose_psi = psi_list[ind]
+	ind = [0,1,2,3,4,5,6,7,8]
+	choose_zenith = zenith_list[ind]
+ 	plot_epeak_zenith_psi(args.altitude,epeak_array, zenith_list, psi_list, choose_start_freq)
+	plot_epeak_zenith_start_freq(args.altitude,epeak_array, zenith_list, f_Lo_list, choose_psi)
+	plot_epeak_start_freq_psi(args.altitude,epeak_array, f_Lo_list, psi_list, choose_zenith)
+
+	# clean up the numerical noise from the simulations
+	epeak_array = clean_numerical_noise(args.altitude, epeak_array, zenith_list, psi_list, f_Lo_list, 
+		gauss_blur_sigma = args.gauss_blur_sigma, ncontours = args.ncontours )
+
+	# plot cleaned slices
+ 	plot_epeak_zenith_psi(args.altitude,epeak_array, zenith_list, psi_list, choose_start_freq, plot_suffix="_clean")
+	plot_epeak_zenith_start_freq(args.altitude,epeak_array, zenith_list, f_Lo_list, choose_psi, plot_suffix="_clean")
+	plot_epeak_start_freq_psi(args.altitude,epeak_array, f_Lo_list, psi_list, choose_zenith, plot_suffix="_clean")
+
+	# save the interpolators
+	write_interpolator_file(args.altitude, epeak_array, f_Lo_list, psi_list, zenith_list )
+
+###########################################################
+def test_zenith(args):
+	# read CSV pulse files and calculate the frequency-domain peak electric field
+	zenith_list, psi_list, f_Lo_list, epeak_array = construct_epeak_array(args.altitude)
+	i_ze = np.where(zenith_list == args.zenith)[0][0]
+	
+	# clean up the numerical noise from the simulations
+	epeak_array = clean_numerical_noise_zenith(args.altitude, epeak_array, zenith_list, psi_list, f_Lo_list, i_ze,
+		gauss_blur_sigma = args.gauss_blur_sigma, ncontours = args.ncontours )
+
+if __name__ == "__main__":
+	
+	parser=argparse.ArgumentParser(description='Build peak electric field lookup tables')
+  	parser.add_argument("-a", "--altitude",  default=35, type=float)
+	parser.add_argument("-g", "--gauss_blur_sigma", default = 2.5, type=float)
+	parser.add_argument("-n", "--ncontours", default=10, type=int)
+	parser.add_argument("-z", "--zenith", default=-999, type=int)
+	args=parser.parse_args()
+
+	if args.zenith < 0.:
+		clean_full_set(args)
+	else:
+		test_zenith(args)
+
+	pyp.show()
+
