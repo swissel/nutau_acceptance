@@ -20,6 +20,25 @@ from skimage.filters import gaussian
 print os.environ.get('TAU_ACC_ZHAIRES_DIR')
 #print os.environ['TAU_ACC_ZHAIRES_DIR']
 
+############################################
+# Usage: generate electric fields from ZHAireS Pulses. There are several steps
+#	1. Define two environment variables $TAU_ACC_ZHAIRES_DIR = the location of the ZHAireS pulse files in npz format
+#					    $TAU_ACC_DETECTOR_PLOTS_DIR = the location to store plots from this analysis
+#	2. Convert ZHAireS root files (from Harm) to npz files. This is a two step process.
+#		a. In the top level folder where the ZHAireS ROOT files are, start the root interactive shell with the dumpData.C #			script, which converts the ROOT files to csv files. Make sure you create a csv folder within each 
+#			Zenith angle / Energy folder (where the out.root files are). 
+#
+#			root
+#			.L dumpData.C
+#			dumpData(35)
+#					.... where 35 is the altitude of the detector in km.
+#
+#		b. In the same top level folder, run python convertCsvToNpz.py, checking first that you are running the correct
+#			altitudes and zenith angles
+#	3. run this script to generate the lookup tables. They will be stored in TAU_ACC_ZHAIRES_DIR 
+#			as interpolator_efields_%dkm.npz'%h, 'w')
+	
+
 pastel_colors = ['#FF6666','#FFCC66','#CCFF66','#66FF66','#66FFCC','#66FFFF','#66CCFF','#6666FF','#CC66FF','#FF66FF','#FF6FCF']
 bright_colors = ['#FF0000','#FF8000','#FFFF00','#80FF00','#00FF00','#00FF80','#00FFFF','#0080FF','#0000FF','#8000FF','#FF00FF']
 bright_colors2 = bright_colors = ['#FF0000','#FF8000','#80FF00','#00FF80','#0080FF','#0000FF','#8000FF','#FF00FF','#FF0080']
