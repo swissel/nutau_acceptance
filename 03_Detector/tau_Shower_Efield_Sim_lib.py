@@ -45,21 +45,36 @@ def galactic_temperature(f_MHz):
 
 ####################################################################################
 
-def noise_v_sq(freq_MHz, Z_L, Z_A, Gain_dB, Nphased=1):
-    # TODO: Include reflection losses at the antennas as (1-Gamma^2)
-    val = kB_W_Hz_K*(frac_sky*galactic_temperature(freq_MHz)[1] + (1.0-frac_sky)*T_ice)*Z_L*Nphased
-    # This is in Volts^2/Hz
-    return val
+#def noise_v_sq(freq_MHz, Z_L, Z_A, Gain_dB, Nphased=1):
+#    # TODO: Include reflection losses at the antennas as (1-Gamma^2)
+#    val = kB_W_Hz_K*(frac_sky*galactic_temperature(freq_MHz)[1] + (1.0-frac_sky)*T_ice)*Z_L*Nphased
+#    # This is in Volts^2/Hz
+#    return val
 
 ####################################################################################
+def reflection_coefficient(Z_A, Z_L):
+    # Z_A is the antenna impedance
+    # Z_L is the load impedance characteristic to the system
+    return (Z_A - np.conj(Z_L))/(Z_A + Z_G)
+
 
 def noise_voltage(freq_min_MHz, freq_max_MHz, df,  Z_L, Z_A, Gain_dB, Nphased=1.):
     # TODO: Include reflection losses at the antennas as (1-Gamma^2)
-    gal_noise = np.sqrt(np.sum(noise_v_sq(np.arange(freq_min_MHz, freq_max_MHz + df, df), Z_L, R_L, Gain_dB, Nphased)*1e6 * df )) 
-    sys_noise = np.sqrt( kB_W_Hz_K * (T_sys) * (freq_max_MHz - freq_min_MHz)*1e6 * Z_L * Nphased)
+    #gal_noise = np.sqrt(np.sum(noise_v_sq(np.arange(freq_min_MHz, freq_max_MHz + df, df), Z_L, R_L, Gain_dB, Nphased)*1e6 * df )) 
+    #sys_noise = np.sqrt( kB_W_Hz_K * (T_sys) * (freq_max_MHz - freq_min_MHz)*1e6 * Z_L * Nphased)
     
+    # calculate the reflection coefficient
+    Gamma = reflection_coefficient(Z_A, Z_L)
+    eff_load = 1. - np.abs(Gamma)
+
+    # Radiation resistance of the antennas
+    R_A = np.real(Z_A)
+
     # this is in V^2/Hz
     T_gal = galactic_temperature(np.arange(freq_min_MHz, freq_max_MHz + df, df))[1]
+    gal_noise = np.sqrt(Nphased * np.sum(T_gal) * frac_sky * df * 1e6 * kB_W_Hz_K * R_A)
+    sys_noise = np.sqrt(Nphased * (freq_max_MHz - freq_min_MHz) * df * kB_W_Hz_K * R_A) 
+    
     # assuming we're phasing after the amplifier rather than before.
     # if before, then the system temperature would also decrease as 1/N 
     # note that temperature ~ power, so this is decreasing the noise voltage by 1/sqrt(N)
@@ -70,8 +85,8 @@ def noise_voltage(freq_min_MHz, freq_max_MHz, df,  Z_L, Z_A, Gain_dB, Nphased=1.
     #print np.sum(combined_temp)
     #print np.sqrt(np.sum(T_gal) * df * 1e6 * kB_W_Hz_K * Z_L )
     
-    # this is in V
-    combined_noise = np.sqrt( np.sum(combined_temp) * df * 1e6 * kB_W_Hz_K * Z_L)
+    # this is in V (rms)
+    combined_noise = np.sqrt( np.sum(combined_temp) * df * 1e6 * kB_W_Hz_K * R_A * eff_load )
 
     return combined_noise, gal_noise, sys_noise
 
@@ -148,7 +163,6 @@ def Voltage_interp(efield_interpolator_list, view_angle_deg, zenith_angle_deg, f
 	Voltage += E_to_V_signal(efield_interpolator_list[i_f_Lo](z,v), Gain_dB, (freq+df)/2., Nphased)
 	
     # account for ZHAIReS sims only extending to 3.16 deg 
-    #TODO: right now sampling a gaussian centered at zero to extrapolate to the wider angles. Should verify with ZHAireS sims out to wider angles
     Voltage[view_angle_deg>3.16] = Voltage[view_angle_deg>3.16]*np.exp( -(view_angle_deg[view_angle_deg>3.16]-0.)**2 / (2*3.16)**2)
     
     Voltage *= distance_exit_km/distance_decay_km   # distance to tau decay point correction
@@ -157,7 +171,7 @@ def Voltage_interp(efield_interpolator_list, view_angle_deg, zenith_angle_deg, f
 
 ####################################################################################
 
-def E_to_V_signal(E_pk, Gain_dB, freq_MHz, Nphased=1):
+def E_to_V_signal(E_pk, Gain_dB, freq_MHz, Z_A, Z_L, Nphased=1):
     # Derived assuming:
     #		P_r   : the power received at the antenna P_r = A P_inc = |V_A|^2/(8 R_A) = V_A  Z_L / (Z_L + Z_A) 
     #			Note: V_A = 2 V_L for a perfectly matched antenna -- which we assume here
@@ -165,8 +179,17 @@ def E_to_V_signal(E_pk, Gain_dB, freq_MHz, Nphased=1):
     #		A : antenna aperture = \lambda^2/(4pi) G eff_load eff_pol 
     #		eff_load: load mismatch factor eff_load = (1 - Gamma^2), where Gamma is the reflection coefficient = (Z_L - Z_A*)/(Z_L + A_Z);	assuming that we have a perfect match
     #		eff_pol : polarization mismatch factor; assuming that this is built into ZHAireS pulses
-    
-    return E_pk * (speed_of_light*1.e3)/(freq_MHz * 1.e6) * np.sqrt(R_L/Z_0 * pow(10., Gain_dB/10.)/4./np.pi) * Nphased
+   
+        # calculate the reflection coefficient
+    Gamma = reflection_coefficient(Z_A, Z_L)
+    eff_load = 1. - np.abs(Gamma)
+
+    # Radiation resistance of the antennas
+    R_A = np.real(Z_A)
+
+    V_A = 2. * E_pk * (speed_of_light*1.e3)/(freq_MHz * 1.e6) * np.sqrt(R_A/Z_0 * pow(10., Gain_dB/10.)/4./np.pi * eff_load) * Nphased
+    V_L = V_A * Z_L / (Z_A + Z_L) # V_L = 1/2 * V_A for a perfectly matched antenna
+    return V_L
 
 ####################################################################################
 
