@@ -116,8 +116,8 @@ def E_field_interp(efield_interpolator_list, view_angle_deg, zenith_angle_deg, f
 	
     # account for ZHAIReS sims only extending to 3.16 deg 
     #TODO: right now sampling a gaussian centered at zero to extrapolate to the wider angles. Should verify with ZHAireS sims out to wider angles
-    E_field[view_angle_deg>3.16] = E_field[view_angle_deg>3.16]*np.exp( -(view_angle_deg[view_angle_deg>3.16]-0.)**2 / (2*3.16)**2)
-    
+    E_field[view_angle_deg>3.16] = 0.
+
     E_field *= distance_exit_km/distance_decay_km   # distance to tau decay point correction
     E_field *= 10**(log10_tau_energy - 17.) # Energy scaling
     return E_field
