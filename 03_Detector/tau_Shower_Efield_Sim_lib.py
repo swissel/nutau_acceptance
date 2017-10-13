@@ -15,7 +15,7 @@ T_sys  = 140.     # System temperature at the lower part of the ANITA band from 
 kB     = 1.38e-23 # in Volts^2/Ohm/Hz/Kelvin
 Z_0 = 377. # Ohms impedance of free space
 Z_L = 50. # Ohms 50-Ohm characteristic impedance
-R_L = 50. # Ohms real part of antenna impedance
+Z_A = 50. # Ohms antenna impedance
 frac_sky = 0.5 # fraction of sky visible to the antenna
 #Gain_dB = 10. # antenna gain
 #BW     = 400.e6   # bandwidth for first two ANITA bands.
@@ -55,7 +55,7 @@ def galactic_temperature(f_MHz):
 def reflection_coefficient(Z_A, Z_L):
     # Z_A is the antenna impedance
     # Z_L is the load impedance characteristic to the system
-    return (Z_A - np.conj(Z_L))/(Z_A + Z_G)
+    return (Z_A - np.conj(Z_L))/(Z_A + Z_L)
 
 
 def noise_voltage(freq_min_MHz, freq_max_MHz, df,  Z_L, Z_A, Gain_dB, Nphased=1.):
@@ -71,22 +71,22 @@ def noise_voltage(freq_min_MHz, freq_max_MHz, df,  Z_L, Z_A, Gain_dB, Nphased=1.
     R_A = np.real(Z_A)
 
     # this is in V^2/Hz
-    T_gal = galactic_temperature(np.arange(freq_min_MHz, freq_max_MHz + df, df))[1]
-    gal_noise = np.sqrt(Nphased * np.sum(T_gal) * frac_sky * df * 1e6 * kB_W_Hz_K * R_A)
-    sys_noise = np.sqrt(Nphased * (freq_max_MHz - freq_min_MHz) * df * kB_W_Hz_K * R_A) 
+    T_gal = galactic_temperature(np.arange(freq_min_MHz, freq_max_MHz + df, df))[1] 
+    gal_noise = np.sqrt(Nphased * np.sum(T_gal) * frac_sky * df * 1e6 * kB_W_Hz_K * R_A * eff_load  )
+    sys_noise = np.sqrt(Nphased * (T_ice*(1.-frac_sky) * eff_load + T_sys) * (freq_max_MHz - freq_min_MHz) * kB_W_Hz_K * Z_L  ) 
     
     # assuming we're phasing after the amplifier rather than before.
     # if before, then the system temperature would also decrease as 1/N 
     # note that temperature ~ power, so this is decreasing the noise voltage by 1/sqrt(N)
     # as you would expect from incoherent noise
-    combined_temp = Nphased*(T_gal*frac_sky + T_ice*(1.-frac_sky) + T_sys)
+    combined_temp = Nphased*(T_gal*frac_sky * eff_load + T_ice*(1.-frac_sky) * eff_load + T_sys)
 
     #print np.sum(T_gal)
     #print np.sum(combined_temp)
     #print np.sqrt(np.sum(T_gal) * df * 1e6 * kB_W_Hz_K * Z_L )
     
     # this is in V (rms)
-    combined_noise = np.sqrt( np.sum(combined_temp) * df * 1e6 * kB_W_Hz_K * R_A * eff_load )
+    combined_noise = np.sqrt( np.sum(combined_temp) * df * 1e6 * kB_W_Hz_K * Z_L  )
 
     return combined_noise, gal_noise, sys_noise
 
@@ -139,7 +139,7 @@ def E_field_interp(efield_interpolator_list, view_angle_deg, zenith_angle_deg, f
 ####################################################################################
 
 
-def Voltage_interp(efield_interpolator_list, view_angle_deg, zenith_angle_deg, f_Lo, f_High, log10_tau_energy, distance_exit_km, distance_decay_km, Gain_dB, Nphased=1):
+def Voltage_interp(efield_interpolator_list, view_angle_deg, zenith_angle_deg, f_Lo, f_High, log10_tau_energy, distance_exit_km, distance_decay_km, Gain_dB,Z_A, Z_L, Nphased=1):
     # Lorentzian beam pattern based on 10-MHz filtered subbands of Harm's results
     # Returns electric field peak in V/m
   
@@ -160,7 +160,7 @@ def Voltage_interp(efield_interpolator_list, view_angle_deg, zenith_angle_deg, f
     for freq in np.arange(f_Lo, f_High, df):
         i_f_Lo = int(round(freq / df - 1))
 	# using the average frequency in the bin to calculate the voltage
-	Voltage += E_to_V_signal(efield_interpolator_list[i_f_Lo](z,v), Gain_dB, (freq+df)/2., Nphased)
+	Voltage += E_to_V_signal(efield_interpolator_list[i_f_Lo](z,v), Gain_dB, (freq+df)/2., Z_A, Z_L, Nphased)
 	
     # account for ZHAIReS sims only extending to 3.16 deg 
     Voltage[view_angle_deg>3.16] = Voltage[view_angle_deg>3.16]*np.exp( -(view_angle_deg[view_angle_deg>3.16]-0.)**2 / (2*3.16)**2)
@@ -187,6 +187,7 @@ def E_to_V_signal(E_pk, Gain_dB, freq_MHz, Z_A, Z_L, Nphased=1):
     # Radiation resistance of the antennas
     R_A = np.real(Z_A)
 
+    #print Gamma, R_A, Z_L / (Z_A + Z_L), eff_load, Z_A, Z_L 
     V_A = 2. * E_pk * (speed_of_light*1.e3)/(freq_MHz * 1.e6) * np.sqrt(R_A/Z_0 * pow(10., Gain_dB/10.)/4./np.pi * eff_load) * Nphased
     V_L = V_A * Z_L / (Z_A + Z_L) # V_L = 1/2 * V_A for a perfectly matched antenna
     return V_L
@@ -431,7 +432,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     # 4. Compute the noise in this band
     #       integrating in 10-MHz steps, to match the frequency bins of the peak voltage
     df = 10.# MHz
-    noises = noise_voltage(f_Lo, f_High, df,  Z_L, R_L, Gain_dB, Nphased) # factor of 1e6 because noise temperature is in V/Hz.
+    noises = noise_voltage(f_Lo, f_High, df,  Z_L, Z_A, Gain_dB, Nphased) # factor of 1e6 because noise temperature is in V/Hz.
     print "Galactic Noise voltage ", noises[1]*1e6, " micro-Volts"
     print "Galactic noise temperature K ", galactic_temperature(np.arange(f_Lo, f_High+df, df))[1], sum(galactic_temperature(np.arange(f_Lo, f_High+df, df))[1])
     print "System noise ", noises[2]
@@ -492,7 +493,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     #   2. Convert electric field to voltage based on detector model (gain, nphased, 
     #   3. Sum over all 10-MHz bins in the desired frequency band (f_Lo to f_High)
 
-    Peak_Voltage = Voltage_interp( efield_interpolator_list, decay_view_angle*180./np.pi, zenith_angle*180./np.pi, f_Lo, f_High, log10_tau_energy, dist_exit_to_detector, dist_decay_to_detector, Gain_dB, Nphased)
+    Peak_Voltage = Voltage_interp( efield_interpolator_list, decay_view_angle*180./np.pi, zenith_angle*180./np.pi, f_Lo, f_High, log10_tau_energy, dist_exit_to_detector, dist_decay_to_detector, Gain_dB, Z_A, Z_L, Nphased)
     
     # 9. Check for trigger at the detector
     for k in range(0,len(GEOM_theta_exit)):

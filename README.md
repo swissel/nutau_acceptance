@@ -26,6 +26,12 @@ This README would normally document whatever steps are necessary to get your app
     * Acceptance curves as a function of gain
 
 
+### Future Improvements ###
 
+1. Detector Model
+    * Include reflection of galactic noise on water/soil surface
+    * Account for imperfect impedance matching and non-uniform antenna impedance
+    * Include non-isotropic gain
+    
 
 
