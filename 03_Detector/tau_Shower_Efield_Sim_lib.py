@@ -65,7 +65,7 @@ def noise_voltage(freq_min_MHz, freq_max_MHz, df,  Z_L, Z_A, Gain_dB, Nphased=1.
     
     # calculate the reflection coefficient
     Gamma = reflection_coefficient(Z_A, Z_L)
-    eff_load = 1. - np.abs(Gamma)
+    eff_load = 1. - np.abs(Gamma)**2
 
     # Radiation resistance of the antennas
     R_A = np.real(Z_A)
@@ -182,7 +182,7 @@ def E_to_V_signal(E_pk, Gain_dB, freq_MHz, Z_A, Z_L, Nphased=1):
    
         # calculate the reflection coefficient
     Gamma = reflection_coefficient(Z_A, Z_L)
-    eff_load = 1. - np.abs(Gamma)
+    eff_load = 1. - np.abs(Gamma)**2
 
     # Radiation resistance of the antennas
     R_A = np.real(Z_A)
