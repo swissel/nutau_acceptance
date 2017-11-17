@@ -59,10 +59,9 @@ def reflection_coefficient(Z_A, Z_L):
 
 
 def noise_voltage(freq_min_MHz, freq_max_MHz, df,  Z_L, Z_A, Gain_dB, Nphased=1.):
-    # TODO: Include reflection losses at the antennas as (1-Gamma^2)
-    #gal_noise = np.sqrt(np.sum(noise_v_sq(np.arange(freq_min_MHz, freq_max_MHz + df, df), Z_L, R_L, Gain_dB, Nphased)*1e6 * df )) 
-    #sys_noise = np.sqrt( kB_W_Hz_K * (T_sys) * (freq_max_MHz - freq_min_MHz)*1e6 * Z_L * Nphased)
-    
+    # Note that Gain_dB isn't used here because the noise is integrated over the full beam of the antenna
+    # TODO: Update with more detailed antenna model
+
     # calculate the reflection coefficient
     Gamma = reflection_coefficient(Z_A, Z_L)
     eff_load = 1. - np.abs(Gamma)**2
@@ -72,7 +71,7 @@ def noise_voltage(freq_min_MHz, freq_max_MHz, df,  Z_L, Z_A, Gain_dB, Nphased=1.
 
     # this is in V^2/Hz
     T_gal = galactic_temperature(np.arange(freq_min_MHz, freq_max_MHz + df, df))[1] 
-    gal_noise = np.sqrt(Nphased * np.sum(T_gal) * frac_sky * df * 1e6 * kB_W_Hz_K * R_A * eff_load  )
+    gal_noise = np.sqrt(Nphased * np.trapz(combined_temp) * frac_sky * df * 1e6 * kB_W_Hz_K * R_A * eff_load  )
     sys_noise = np.sqrt(Nphased * (T_ice*(1.-frac_sky) * eff_load + T_sys) * (freq_max_MHz - freq_min_MHz) * kB_W_Hz_K * Z_L  ) 
     
     # assuming we're phasing after the amplifier rather than before.
@@ -86,7 +85,7 @@ def noise_voltage(freq_min_MHz, freq_max_MHz, df,  Z_L, Z_A, Gain_dB, Nphased=1.
     #print np.sqrt(np.sum(T_gal) * df * 1e6 * kB_W_Hz_K * Z_L )
     
     # this is in V (rms)
-    combined_noise = np.sqrt( np.sum(combined_temp) * df * 1e6 * kB_W_Hz_K * Z_L  )
+    combined_noise = np.sqrt( np.trapz(combined_temp) * df * 1e6 * kB_W_Hz_K * Z_L  )
 
     return combined_noise, gal_noise, sys_noise
 
@@ -464,6 +463,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     sum_P_exit_P_range = 0.	     # zero until it is proven to decay before it passes the detector
     sum_P_exit_P_range_P_det = 0.    # zero until it is proven to be detectable
     triggered_events = []
+    ranged_events = []
     all_events = []
     for k in range(0,len(GEOM_theta_exit)):
         # 7.1 Get LUT exit angle closest to geometry exit angle
@@ -501,6 +501,8 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
             if( P_range[k] == 1.):
                 #Peak_Voltage = E_to_V_signal(Peak_E_field[k], Gain_dB, Nphased)
                 Peak_Voltage_SNR[k] = Peak_Voltage[k] / Noise_Voltage
+		ranged_events.append(np.array( [ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_Voltage[k], exit_view_angle[k]*180./np.pi, decay_view_angle[k]*180./np.pi,  zenith_angle[k]*180./np.pi ]))
+
                 if(Peak_Voltage_SNR[k] > threshold_voltage_snr):
                     P_det[k] = 1.
                     triggered_events.append(np.array( [ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_Voltage[k], exit_view_angle[k]*180./np.pi, decay_view_angle[k]*180./np.pi,  zenith_angle[k]*180./np.pi ]))
@@ -540,6 +542,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
                             A_Omega_trig     = A_Omega*sum_P_exit_P_range_P_det/float(N_cut),
 			    noise_voltage    = Noise_Voltage,
                             triggered_events = np.array(triggered_events),
+			    ranged_events = np.array(ranged_events)
                             )
                             #all_events = np.array(all_events))
 
