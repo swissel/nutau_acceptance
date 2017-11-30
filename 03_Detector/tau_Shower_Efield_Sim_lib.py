@@ -71,7 +71,7 @@ def noise_voltage(freq_min_MHz, freq_max_MHz, df,  Z_L, Z_A, Gain_dB, Nphased=1.
 
     # this is in V^2/Hz
     T_gal = galactic_temperature(np.arange(freq_min_MHz, freq_max_MHz + df, df))[1] 
-    gal_noise = np.sqrt(Nphased * np.trapz(combined_temp) * frac_sky * df * 1e6 * kB_W_Hz_K * R_A * eff_load  )
+    gal_noise = np.sqrt(Nphased * np.trapz(T_gal) * frac_sky * df * 1e6 * kB_W_Hz_K * R_A * eff_load  )
     sys_noise = np.sqrt(Nphased * (T_ice*(1.-frac_sky) * eff_load + T_sys) * (freq_max_MHz - freq_min_MHz) * kB_W_Hz_K * Z_L  ) 
     
     # assuming we're phasing after the amplifier rather than before.
