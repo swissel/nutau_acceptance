@@ -433,11 +433,15 @@ def decay_point_geom(k_x, k_y, k_z, x_exit, y_exit, z_exit, X0_decay, x_det, y_d
     
     return x_decay, y_decay, z_decay, decay_view_angle, decay_dist_to_detector
 
-def get_altitude(x, y, z, R_e=Earth_radius): 
+def get_altitude(x, y, z, ground_altitude=Earth_radius):
+   # finds the altitude of the decay point, given a ground altitude relative to the center of the
+   # Earth and the decay position in Cartesian coordinates
    r = np.sqrt(x**2 + y**2 + z**2)
-   return r - R_e
+   return r - ground_altitude
 
 def get_zenith_angle(k_x, k_y, k_z, x, y, z):
+	# finds the zenith angle relative to the Earth normal for a vector
+	# defined by a Cartesian point (x,y,z) and it's propagation direction (k-hat)
 	r = np.sqrt(x*x + y*y + z*z)
 	# the zenith angle is the angle between n-hat (the normal to the surface)
 	# and the propagation direction of the shower k-hat
@@ -494,6 +498,8 @@ def get_distance_decay_to_detector(ground_elevation,
 def get_distance_decay_to_detector_zenith_exit(ground_elevation, 
                                    decay_altitude, detector_altitude,
                                    zenith_exit_deg, R_e=6371):
+    # finds the distance between the two points defined by the
+    # decay altitude, detector altitude, and the zenith angle at the point
     if( decay_altitude ==0 ):
         return get_X0( ground_elevation, detector_altitude, zenith_exit_deg)
     
@@ -688,7 +694,8 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     	Peak_Voltage = Voltage_interp( efield_interpolator_list, decay_view_angle*180./np.pi, zenith_angle*180./np.pi, f_Lo, f_High, log10_tau_energy, dist_exit_to_detector, dist_decay_to_detector, Gain_dB, Z_A, Z_L, Nphased)
     else:
 	# calculate the decay altitude and zenith angles
-	decay_altitude = get_altitude(x_decay, y_decay, z_decay)
+	# the ZHAireS simulations ere all run at 3 km, so you assume that the altitude is calculated from the Earth radius + 3 km
+	decay_altitude = get_altitude(x_decay, y_decay, z_decay, ground_altitude=Earth_radius + 3.)
 	zenith_angle_decay =  get_zenith_angle(k_x, k_y, k_z, x_decay, y_decay, z_decay)
 	# 0-km decay parameterization
 	#Peak_Efield = efield_anita_generic_parameterization(pow(10, log10_tau_energy), dist_decay_to_detector, decay_view_angle*180./np.pi, parm_decay_altitude=0)
