@@ -1,9 +1,11 @@
-#!/usr/bin/env python
+#!/u/nobackup/bern/swissel/anaconda2/bin/python
+
 import matplotlib
 matplotlib.use('Agg')
 from pylab import *
 import argparse
-
+import sys
+sys.path.append("../02_TauDecay/")
 from tau_Shower_Sim_lib import *
 import os
 
