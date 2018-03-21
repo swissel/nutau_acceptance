@@ -24,10 +24,11 @@ print os.environ.get('TAU_ACC_ZHAIRES_DIR')
 # Usage: generate electric fields from ZHAireS Pulses. There are several steps
 #	1. Define two environment variables $TAU_ACC_ZHAIRES_DIR = the location of the ZHAireS pulse files in npz format
 #					    $TAU_ACC_DETECTOR_PLOTS_DIR = the location to store plots from this analysis
-#	2. Convert ZHAireS root files (from Harm) to npz files. This is a two step process.
-#		a. In the top level folder where the ZHAireS ROOT files are, start the root interactive shell with the dumpData.C #			script, which converts the ROOT files to csv files. Make sure you create a csv folder within each 
-#			Zenith angle / Energy folder (where the out.root files are). 
-#
+#	2. Make csv file directories in each of Harm's sim folders (Zenith angle / Energy folder (where the out.root files are). ) 
+#		using the ~/Dropbox/MountainTop/harms_sims/makeDirs.sh script			
+#	3. Convert ZHAireS root files (from Harm) to npz files. This is a two step process.
+#		a. In the top level folder where the ZHAireS ROOT files are, start the root interactive shell with the dumpData.C 
+#			script, which converts the ROOT files to csv files. #
 #			root
 #			.L dumpData.C
 #			dumpData(35)
@@ -47,8 +48,8 @@ pyp.rcParams['legend.labelspacing'] = 0.1
 cmap = matplotlib.cm.get_cmap('inferno')
 
 ###########################################################
-def read_npz_files(antenna_height, zenith):
-    npzfile = np.load(os.environ['TAU_ACC_ZHAIRES_DIR'] + "/" + "altitude_%dkm_zenith_%d.npz"%(antenna_height, zenith))
+def read_npz_files(antenna_height, decay, zenith):
+    npzfile = np.load(os.environ['TAU_ACC_ZHAIRES_DIR'] + "/" + "altitude_%dkm_decay_%dkm_zenith_%d.npz"%(antenna_height, decay, zenith))
     efield_td = npzfile['efield_td'][()] ## for some reason just reading the arrays gives a 0-dim array, so skip this.
     efield_fd = npzfile['efield_fd'][()]
     return efield_td, efield_fd
@@ -64,7 +65,7 @@ def band_peak_efield(efield, freq, f_LO, bandwidth):
     # factor of two comes from spectrum
     return 2*np.sum(np.abs(efield[cut]))*df
 
-def efield_vs_angle(h, z, f_Lo_list, bandwidth):
+def efield_vs_angle(h, decay, z, f_Lo_list, bandwidth):
 
     off_angle_array = np.arange(0.0,80*0.04, 0.04)
     i_off_angle_array = range(0, len(off_angle_array))
@@ -73,7 +74,7 @@ def efield_vs_angle(h, z, f_Lo_list, bandwidth):
     for i_offangle in i_off_angle_array:
         #if(i_offangle%10==0): print i_offangle
         offangle = off_angle_array[i_offangle]
-        efield_td, efield_fd = read_npz_files(h,z)
+        efield_td, efield_fd = read_npz_files(h,decay, z)
         efield = efield_td[i_offangle]['y_v_per_m']
         time = efield_td[i_offangle]['time_s']
         time -= time[0]
@@ -89,7 +90,7 @@ def efield_vs_angle(h, z, f_Lo_list, bandwidth):
 ###########################################################
 # Construct an array of the peak efield for a range of starting frequencies
 # and bandwidths and psi angles
-def construct_epeak_array(h):
+def construct_epeak_array(h, decay):
 	zenith_list = np.array([55, 60, 65, 70, 75, 80, 85, 87, 89])
 	f_Lo_list = np.arange(10., 1610., 10.)
 	bandwidth = 10.
@@ -102,7 +103,7 @@ def construct_epeak_array(h):
 
 	epeak_array = []
 	for z in zenith_list:
-	    psi_list, epeak_list = efield_vs_angle(h, z, f_Lo_list, bandwidth)
+	    psi_list, epeak_list = efield_vs_angle(h, decay, z, f_Lo_list, bandwidth)
 	    epeak_array.append(epeak_list)
 	    
 	epeak_array = np.array(epeak_array)
@@ -351,7 +352,7 @@ def write_interpolator_file(h, epeak_array, f_Lo_list, psi_list, zenith_list ):
 ###########################################################
 def clean_full_set(args):
 	# read CSV pulse files and calculate the frequency-domain peak electric field
-	zenith_list, psi_list, f_Lo_list, epeak_array = construct_epeak_array(args.altitude)
+	zenith_list, psi_list, f_Lo_list, epeak_array = construct_epeak_array(args.altitude, args.decay)
 
 	# plot slices
 	choose_start_freq = [10., 30., 50., 200., 300., 1000.]
@@ -519,7 +520,7 @@ def compare_1d_plots(h, epeak_array,efield_interpolator_list, zenith_list, psi_l
 ###########################################################
 def test_interpolator(args):
 	# read CSV pulse files and calculate the frequency-domain peak electric field
-	zenith_list, psi_list, f_Lo_list, epeak_array = construct_epeak_array(args.altitude)
+	zenith_list, psi_list, f_Lo_list, epeak_array = construct_epeak_array(args.altitude, args.decay)
 	#i_ze = np.where(zenith_list == args.zenith)[0][0]
 
 	# read the interpolator file
@@ -547,6 +548,7 @@ if __name__ == "__main__":
 	
 	parser=argparse.ArgumentParser(description='Build peak electric field lookup tables')
   	parser.add_argument("-a", "--altitude",  default=35, type=float)
+	parser.add_argument("-d", "--decay", default=0, type=float)
 	parser.add_argument("-g", "--gauss_blur_sigma", default = 2.5, type=float)
 	parser.add_argument("-n", "--ncontours", default=10, type=int)
 	parser.add_argument("-z", "--zenith", default=-999, type=int)
