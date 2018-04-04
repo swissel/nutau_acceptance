@@ -6,6 +6,7 @@ from pylab import *
 import argparse
 import sys
 sys.path.append("../02_TauDecay/")
+sys.path.append("../src/")
 from tau_Shower_Sim_lib import *
 import os
 
