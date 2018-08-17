@@ -1,7 +1,7 @@
 import numpy as np
 import os
 import re
-tau_exit_num_events = 1.e6
+# tau_exit_num_events = 1.e6
 
 # Define constants
 Earth_radius   = 6356.7523  # km, polar Earth radius
@@ -566,12 +566,13 @@ def GEOM(altitude, num_events, view_angle_cut_deg = 5.):
 
 def load_tau_LUTs(LUT_file_name):
     f = np.load(LUT_file_name)
-    data_array = f['data_array']
+    data_array    = f['data_array']
     th_exit_array = f['th_exit_array']
+    num_sim       = f['num_sim']
     f.close()
     P_exit = []
     for k in range(0, len(th_exit_array)):
-        P_exit.append(float(len(data_array[k]))/tau_exit_num_events)
+        P_exit.append(float(len(data_array[k]))/float(num_sim))
     return np.array(90. + th_exit_array), np.array(P_exit), np.array(data_array)
 
 ####################################################################################
