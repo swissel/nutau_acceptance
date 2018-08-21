@@ -572,7 +572,7 @@ def load_tau_LUTs(LUT_file_name):
     f.close()
     P_exit = []
     for k in range(0, len(th_exit_array)):
-        P_exit.append(float(len(data_array[k]))/float(num_sim))
+        P_exit.append(float(len(data_array[k]))/float(num_sim[k]))
     return np.array(90. + th_exit_array), np.array(P_exit), np.array(data_array)
 
 ####################################################################################
