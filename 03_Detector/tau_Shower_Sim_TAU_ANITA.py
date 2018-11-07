@@ -20,7 +20,8 @@ if __name__ == "__main__":
   parser.add_argument("-N",    "--nevents", default = -1, help="number of events", type=float)
   parser.add_argument("-n", "--noise", default='default', help="noise type: 'gal': galactic 'sys': system 'default': combo")
   parser.add_argument("-g", "--gain", default = 10., help='gain of antenna in dBi; if phasing antennas, this is the gain of each antenna', type=float) 
-  parser.add_argument("-p", "--phased", default=1, help='number of phased antennas', type=float) 
+  parser.add_argument("-p", "--phased", default=1, help='number of phased antennas', type=float)
+  parser.add_argument("-t", "--threshold", default = 284.e-6, help='Epk-pk threshold 284e-6 V/m anita-3 446e-6 V/m anita-1')
   
   #KLUDGE TO GET ARGPARSE TO READ NEGATIVE VALUES
   for i, arg in enumerate(sys.argv):
@@ -28,6 +29,7 @@ if __name__ == "__main__":
 
   args=parser.parse_args()
 
-A_OMEGA_tau_exit(args.geom_file, args.lut_file, args.efield_file, args.cut_ang, args.start_frequency, args.stop_frequency, outTag = args.output_tag, N=args.nevents, noise=args.noise, Gain_dB=args.gain, Nphased=args.phased)
+A_OMEGA_tau_exit(args.geom_file, args.lut_file, args.efield_file, args.cut_ang, args.start_frequency, args.stop_frequency, 
+		 outTag=args.output_tag, N=args.nevents, noise=args.noise, Gain_dB=args.gain, Nphased=args.phased, Epk_to_pk_threshold=args.threshold)
 
 

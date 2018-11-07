@@ -448,7 +448,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     
     # 5. Load Energy Look-up Table
     print "Loading energy look-up table: ", LUT_file_name
-    LUT_th_exit, LUT_P_exit, LUT_log10_E_tau = load_tau_LUTs(LUT_file_name)
+    LUT_zen_exit, LUT_P_exit, LUT_log10_E_tau = load_tau_LUTs(LUT_file_name)
     P_LUT = np.zeros(len(x_exit[view_cut]))   # zero until it is
     P_range = np.zeros(len(x_exit[view_cut])) # zero until it is proven to decay before it passes the detector
     P_det = np.zeros(len(x_exit[view_cut]))   # zero until it is proven to be detectable
@@ -467,8 +467,8 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     ranged_events = []
     all_events = []
     for k in range(0,len(GEOM_theta_exit)):
-        # 7.1 Get LUT exit angle closest to geometry exit angle
-        idx = np.argmin(np.abs(LUT_th_exit - GEOM_theta_exit[k]))
+        # 7.1 Get LUT exit angle closest to geometry exit angle. Note that both of these are zenith angles.
+        idx = np.argmin(np.abs(LUT_zen_exit - GEOM_theta_exit[k]))
         # 7.2 Get tau lepton energy and decay position
         P_LUT[k] = LUT_P_exit[idx]
         if( P_LUT[k] > 1.e-15):  # make sure the probability of this event is non-zero  
