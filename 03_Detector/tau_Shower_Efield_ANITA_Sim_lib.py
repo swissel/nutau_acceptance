@@ -330,7 +330,7 @@ def E_to_V_signal(E_pk, Gain_dB, freq_MHz, Z_A, Z_L, Nphased=1):
     # Radiation resistance of the antennas
     R_A = np.real(Z_A)
 
-    print E_pk, speed_of_light, freq_MHz, Gain_dB, Nphased, eff_load, R_A, Z_L / (Z_A + Z_L), eff_load, Z_A, Z_L, Z_0 
+    #print Gamma, R_A, Z_L / (Z_A + Z_L), eff_load, Z_A, Z_L 
     V_A = 2. * E_pk * (speed_of_light*1.e3)/(freq_MHz * 1.e6) * np.sqrt(R_A/Z_0 * pow(10., Gain_dB/10.)/4./np.pi * eff_load) * Nphased
     V_L = V_A * Z_L / (Z_A + Z_L) # V_L = 1/2 * V_A for a perfectly matched antenna
     return V_L
@@ -533,6 +533,25 @@ def get_distance_decay_to_detector_zenith_exit(ground_elevation,
     return get_distance_decay_to_detector(ground_elevation, decay_altitude, 
                                           detector_altitude, zenith_decay_deg)
 
+def get_geometric_zenith_angle(x_det, y_det, z_det, x_exit, y_exit, z_exit):
+    # geometric zenith angle at the exit point 
+    # comes from the dot product between the r-vector to the exit point and
+    # the vector pointing from the exit point ot the detector
+    r_det_exit = np.sqrt(pow(x_exit-x_det, 2) + pow(y_exit-y_det,2) + pow(z_exit-z_det, 2))
+    r_exit = np.sqrt(x_exit*x_exit + y_exit*y_exit + z_exit*z_exit)
+    r_det = np.sqrt(x_det*x_det + y_det*y_det + z_det*z_det)
+
+    n_x = x_exit/r_exit
+    n_y = y_exit/r_exit
+    n_z = z_exit/r_exit
+    # this is the geometry k-vector!
+    kg_x = (x_det - x_exit) / r_det_exit
+    kg_y = (y_det - y_exit) / r_det_exit
+    kg_z = (z_det - z_exit) / r_det_exit
+
+    cosZe_geom = n_x * kg_x + n_y * kg_y + n_z * kg_z
+    zenith = np.arccos(cosZe_geom)
+    return zenith
 
 ####################################################################################
 
@@ -594,7 +613,7 @@ def parse_input_args(input_arg_string):
 # 284e-6 anita-3 446e-6 V/m anita-1
 
 def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_ang, f_Lo, f_High, outTag='test', 
-			N=-1, noise='default', Gain_dB=10.0, Nphased=1, LUT=False, icethick_geom = 0.0,Epk_to_pk_threshold =  284e-6 ): 
+			N=-1, noise='default', Gain_dB=10.0, Nphased=1, LUT=False, icethick_geom = 0.0, Epk_to_pk_threshold =  284e-6 ): 
     
     print "Inputs to A_OMEGA_tau_exit:\n=============================="
     print "geom_file_name", geom_file_name
@@ -652,46 +671,12 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     # the exit point which is what it is now.
     dist_exit_to_detector = get_distance_to_detector(x_exit, y_exit, z_exit, x_det, y_det, z_det)[view_cut] 
     GEOM_theta_exit = np.arccos(cos_theta_exit[view_cut])*180./np.pi
-    exit_view_angle = exit_view_angle[view_cut] #radians, view angle of the particle at the exit point
-
-    # 4. Load Energy Look-up Table
-    print "Loading energy look-up table: ", LUT_file_name
-    LUT_zen_exit, LUT_P_exit, LUT_log10_E_tau = load_tau_LUTs(LUT_file_name)
-    P_LUT = np.zeros(len(x_exit[view_cut]))   # zero until it is
-    P_range = np.zeros(len(x_exit[view_cut])) # zero until it is proven to decay before it passes the detector
-    P_det = np.zeros(len(x_exit[view_cut]))   # zero until it is proven to be detectable
-    ice_thick_match = re.match( r'.*/(\d+\.\d+)km\_ice.*', LUT_file_name)
-    ice_thick = 2.0
-    if ice_thick_match:
-    	ice_thick = float(ice_thick_match.group(1))
-    print "Ice thickness ", ice_thick, " km"
-
-    # 5. update the exit point. The geometry LUTs are run for a specific ice thickness, but we are testing differnt ice_thicknesses with different P_exit LUTs
-    # so the trajectory of the particle needs to be updated further
-    x_exit, y_exit, z_exit = update_exit_point(k_x, k_y, k_z, x_exit, y_exit, z_exit, icethick_geom, ice_thick)
-
-    # 6. geometric zenith angle at the exit point 
-    # comes from the dot product between the r-vector to the exit point and
-    # the vector pointing from the exit point ot the detector
-    r_det_exit = np.sqrt(pow(x_exit-x_det, 2) + pow(y_exit-y_det,2) + pow(z_exit-z_det, 2))
-    r_exit = np.sqrt(x_exit*x_exit + y_exit*y_exit + z_exit*z_exit)
-    r_det = np.sqrt(x_det*x_det + y_det*y_det + z_det*z_det)
-
-    n_x = x_exit/r_exit
-    n_y = y_exit/r_exit
-    n_z = z_exit/r_exit
-    # this is the geometry k-vector!
-    ks_x = (x_det - x_exit) / r_det_exit
-    ks_y = (y_det - y_exit) / r_det_exit
-    ks_z = (z_det - z_exit) / r_det_exit
-
-    cosZe_geom = n_x * ks_x + n_y * ks_y + n_z * ks_z
-    zenith_angle_geom = np.arccos(cosZe_geom) # radians, zenith angle in the geometry tables at the exit point
-    theta_emergence_geom = np.pi/2. - zenith_angle_geom # radians, emergence angle in the geometry tables at the exit point
+    exit_view_angle = exit_view_angle[view_cut] #radians
+    zenith_angle_exit = np.arccos(cos_theta_exit) # radians
+    theta_emergence = np.pi/2. - zenith_angle_exit # radians
     
     # 7. set up some arrays to be calculated on the fly
     dist_decay_to_detector = np.zeros(len(dist_exit_to_detector))
-    zenith_angle_exit  = get_zenith_angle(k_x, k_y, k_z, x_exit, y_exit, z_exit) # zenith angle of the particle at the exit point
     x_decay = np.zeros(len(x_exit[view_cut]))
     y_decay = np.zeros(len(y_exit[view_cut]))
     z_decay = np.zeros(len(z_exit[view_cut]))
@@ -699,6 +684,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     X0_dist = np.zeros(len(dist_exit_to_detector))
     log10_tau_energy = np.zeros(len(exit_view_angle))
     Peak_Voltage_SNR = np.zeros(len(exit_view_angle))
+    zenith_angle_geom = np.zeros(len(exit_view_angle))
 
     # 8. Set up histogram for the differential acceptance
     binwidth=0.3 # 0.3deg wide bins
@@ -722,7 +708,19 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     	Noise_Voltage = noises[0]
    	print "Noise voltage ", Noise_Voltage*1e6, " micro-Volts, due to G*T_gal + T_sys + T_ant"
     
-    # 10. Load the Efield interpolator for this altitude 
+    # 5. Load Energy Look-up Table
+    print "Loading energy look-up table: ", LUT_file_name
+    LUT_th_exit, LUT_P_exit, LUT_log10_E_tau = load_tau_LUTs(LUT_file_name)
+    P_LUT = np.zeros(len(x_exit[view_cut]))   # zero until it is
+    P_range = np.zeros(len(x_exit[view_cut])) # zero until it is proven to decay before it passes the detector
+    P_det = np.zeros(len(x_exit[view_cut]))   # zero until it is proven to be detectable
+    ice_thick_match = re.match( r'.*/(\d+\.\d+)km\_ice.*', LUT_file_name)
+    ice_thick = 2.0
+    if ice_thick_match:
+    	ice_thick = float(ice_thick_match.group(1))
+    print "Ice thickness ", ice_thick, " km"
+
+    # 6. Load the Efield interpolator for this altitude 
     #    N. B.: EField_LUT_file_name should have the altitude in the file name
     if LUT:
     	global efield_interpolator_list
@@ -738,29 +736,24 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     triggered_events = []
     ranged_events = []
     all_events = []
-
     for k in range(0,len(GEOM_theta_exit)):
 
-	# 11.1 zenith angle of the particle at the exit point. The emergence angle of the particle is complementary to the zenith angle of the particle
-	zenith_angle_exit[k]  = get_zenith_angle(k_x[k], k_y[k], k_z[k], x_exit[k], y_exit[k], z_exit[k])
-	
-	# 11.2 store the geometric zenith angle in the emergence angle histogram
-	ea_idx = np.argmin(np.abs(emerge_angle_bins - (90. - zenith_angle_geom[k]*180./np.pi)))
-	#print emerge_angle_bins[ea_idx], zenith_angle_exit[k]*180./np.pi,(90. - zenith_angle_geom[k]*180./np.pi)
-	nsim_emerge_angle[ea_idx] = nsim_emerge_angle[ea_idx] + 1 
-	
-	# 11.3 Get LUT exit angle closest to zenith angle of the particle
-	# Note that both of these are zenith angles.
-        idx = np.argmin(np.abs(LUT_zen_exit - zenith_angle_exit[k]*180./np.pi ))
-        # 11.4 Get tau lepton energy and decay position
+	# 7.1 Get LUT exit angle closest to geometry exit angle. Note these are both zenith angles. The GEOM_theta_exit is the zenith angle of the particle
+        idx = np.argmin(np.abs(LUT_th_exit - GEOM_theta_exit[k]))
+        # 7.2 Get tau lepton energy and decay position
         P_LUT[k] = LUT_P_exit[idx]
-        if( P_LUT[k] > 1.e-15):  # make sure the probability of this event is non-zero  
+	if( P_LUT[k] > 1.e-15):  # make sure the probability of this event is non-zero  
             log10_tau_energy[k] = LUT_log10_E_tau[idx][np.random.randint(0,len(LUT_log10_E_tau[idx]))] # random tau energy
             decay_range = tau_lepton_decay_range(log10_tau_energy[k])                      # estimated decay range
-	    # 11.5 sample exponentially distributed decay positions
-	    X0_dist[k] = np.random.exponential(scale=decay_range)
+	    x_exit[k], y_exit[k], z_exit[k] = update_exit_point(k_x[k], k_y[k], k_z[k], x_exit[k], y_exit[k], z_exit[k], icethick_geom, ice_thick)
+	
+	    # the exit point and the detector position define the exit point zenith angle and emergence angle
+	    zenith_angle_geom[k] = get_geometric_zenith_angle(x_det, y_det, z_det, x_exit[k], y_exit[k], z_exit[k]) # radians, zenith angle in the geometry tables at the exit point
+
+	    # sample exponentially distributed decay positions	
+	    X0_dist[k] = np.random.exponential(scale=decay_range)                          
 	    x_decay[k], y_decay[k], z_decay[k], decay_view_angle[k], dist_decay_to_detector[k] = decay_point_geom(k_x[k], k_y[k], k_z[k], x_exit[k], y_exit[k], z_exit[k], X0_dist[k], x_det, y_det, z_det)
-            # 11.6 If the event is contained within the range, then the probability is 1.
+            # If the event is contained within the range, then the probability is 1.
             # If the shower decays beyond the detector, then it has a negative x-position. 
 	    # The range probability in that case is zero.
             if((X0_dist[k] < dist_exit_to_detector[k]) and (x_decay[k] > 0.)):
@@ -837,7 +830,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
             print '\t %1.3e km^2 sr'%(A_Omega*sum_P_exit_P_range_P_det / float(k) )
             print '\t ',np.array(triggered_events).shape
             print ''
-        all_events.append(np.array( [ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_Voltage[k], exit_view_angle[k]*180./np.pi, decay_view_angle[k]*180./np.pi,  zenith_angle_exit[k]*180./np.pi, zenith_angle_decay[k]*180./np.pi, zenith_angle_geom[k]*180./np.pi, decay_altitude[k], P_LUT[k], P_range[k], P_det[k]]))
+        #all_events.append(np.array( [ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_Voltage[k], exit_view_angle[k]*180./np.pi, decay_view_angle[k]*180./np.pi,  zenith_angle_exit[k]*180./np.pi, zenith_angle_decay[k]*180./np.pi, zenith_angle_geom[k]*180./np.pi, decay_altitude[k], P_LUT[k], P_range[k], P_det[k]]))
 
     print 'After all %d events, %d events triggered: '%(len(GEOM_theta_exit), len(triggered_events))
     print '\t %1.3e km^2 sr'%(A_Omega)
@@ -860,9 +853,9 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
 			    noise_voltage    = Noise_Voltage,
                             triggered_events = np.array(triggered_events),
 			    emerge_angle_bins = emerge_angle_bins,
-			    nsim_emerge_angle = nsim_emerge_angle,
+			    nsim_emerge_angle = nsim_emerge_angle)
                              #ranged_events = np.array(ranged_events),
-			     all_events = np.array(all_events))
+			     #all_events = np.array(all_events))
 
     print "Wrote ", outTag+'.npz and ', outTag+'_events.npz'
 
