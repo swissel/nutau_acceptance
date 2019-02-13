@@ -1,16 +1,18 @@
 import numpy as np
 import os
-#tau_exit_num_events = 1.e6
+import re
+# tau_exit_num_events = 1.e6
 
 # Define constants
-Earth_radius   = 6371.      # km
+Earth_radius   = 6356.7523  # km, polar Earth radius
+#Earth_radius = 6371 #km, Average Earth radius
 tau_life_time  = 2.906e-13  # seconds
 tau_mass       = 1776.82e6  # eV/c2
 speed_of_light = 299792.458 # km / second
 kB_W_Hz_K = 1.38064852e-23 # Watts / Hz / K
 
 # Threshold voltage based on galactic noise and system temperature:
-T_ice  = 290     # Kelvin (water temperature)
+T_ice  = 270     # Kelvin (water temperature)
 T_sys  = 140.     # System temperature at the lower part of the ANITA band from elog 119
 kB     = 1.38e-23 # in Volts^2/Ohm/Hz/Kelvin
 Z_0 = 377. # Ohms impedance of free space
@@ -23,8 +25,18 @@ frac_sky = 0.5 # fraction of sky visible to the antenna
 #threshold_voltage =np.sqrt(kB*(T_ant+T_sys)*Z_load*BW) # V, this is 8.22 microVolts for the parameters given above
 
 #threshold_voltage = 72.e-6 # V, this is based on taking half the peak field for the weakest ANITA-1 EAS candidate. (0.466 mV/m convolved with antenna effective height at 300 MHz). 
-threshold_voltage_snr = 5.0
-print 'threshold_voltage_snr', threshold_voltage_snr
+####
+# For ANITA-I the threshold pk-pk voltage is 0.143 mV, which corresponds to 5.1 sigma for a signal antenna 
+# thermal noise voltage of 0.014 mV.
+#######
+# This is also the same as having 6 phased antennas and a snr of 12.50 sigma
+# ANITA-I SNRs are defined as SNR = Vpk-pk/(2 Vrms). 
+# Asymmetry of the pulse means that Vpk-pk != Vpk. Vpk is what's stored in the lookup tables
+########
+Vpk_to_Vpkpk_conversion = 1.4
+#threshold_voltage_snr = 4.39
+#Epk_to_pk_threshold =  284e-6 # 284e-6 anita-3 446e-6 V/m anita-1
+#print 'threshold_voltage_snr', threshold_voltage_snr
 ####################################################################################
 
 def galactic_temperature(f_MHz):
@@ -97,13 +109,18 @@ def tau_lepton_decay_range(tau_lepton_energy):
 ####################################################################################
 def load_efield_interpolator(EFIELD_LUT_file_name):
     # the interpolator is for 10-MHz subbands and 
-    # is called as interpolator(zenith_angle, starting_frequency,psi_angle)
+    # is called as interpolator(]zenith_angle, starting_frequency,psi_angle)
     # zenith angle is the shower zenith angle in deg.
     # staring_frequency is the lowest frequency in the band in MHz
     # psi_angle is the angel off the shower axis, 
     # equivalent to view angle in deg.
     interp_file = np.load(EFIELD_LUT_file_name)
     return interp_file['efield_interpolator_list'][()]
+
+def load_efield_parameterization():
+    npzfile = np.load(os.environ['TAU_ACC_ZHAIRES_DIR'] + "/anita_generic_parameterization.npz")
+    parm_2d = npzfile['parm_2d']
+    return parm_2d
 ####################################################################################
 
 def E_field_interp(efield_interpolator_list, view_angle_deg, zenith_angle_deg, f_Lo, f_High, log10_tau_energy, distance_exit_km, distance_decay_km):
@@ -169,6 +186,134 @@ def Voltage_interp(efield_interpolator_list, view_angle_deg, zenith_angle_deg, f
     return Voltage
 
 ####################################################################################
+# Parameterization of efield simulations
+#
+#########
+def lorentzian_gaussian_background_func(psi, E_0, frac_gauss, gauss_peak,
+                                        gauss_width, E_1, width2):
+    v = (psi - gauss_peak) / gauss_width
+    # background gaussian centered at psi=0
+    # lorentizian + Gaussian to model the beam (takes care of some asymmetries inside vs. outside cone)
+    E_field = E_0*(frac_gauss*np.exp(-v**2/2.)  + (1-frac_gauss)/(1+v**2)) + E_1*np.exp(-psi**2/2./width2**2)
+    
+    return E_field
+    
+def efield_anita_generic_parameterization(energy, distance_shower_to_detector, theta_view, parm_decay_altitude=0): 
+    if( parm_decay_altitude!= 5):
+	if parm_decay_altitude != 0:
+		print "Warning: Using parameterization for 0 km tau decay altitude, but requested ", parm_decay_altitude
+    	# Parameterization for a 10^17 eV tau shower at zenith angle of 65deg / emergence angle 25deg
+	# decay altitude of 0 km, ground elevation of 3 km, detector altitude of 37 km
+	parms = [  1.41662197e-04,   8.10616766e-01,   9.35347123e-01,
+             1.45537805e-01,1.13492535e-06,   1.00000000e+00]
+    	# Evaluates to 86.417407396098497 km
+    	r_zhaires_tau_shower = get_distance_decay_to_detector_zenith_exit(2, 0, 37, 65,)
+    	e_zhaires_tau_shower = 1e17
+    else:
+   	# Parameterization for a 10^17 eV tau shower at zenith angle of 65 deg / emergence angle 25deg
+   	# decay altitude of 5 km, ground elevation of 3 km, detector altitude of 37 km
+    	parms = [  2.85992061e-04,   7.76446976e-01,   4.78891355e-01,   1.46997140e-01,
+   	3.19229984e-06,  2.90189325e-01]
+    	# Evaluates to 67.682759132837418 km
+    	r_zhaires_tau_shower = get_distance_decay_to_detector_zenith_exit(2, 5, 37, 65,)
+    	e_zhaires_tau_shower = 1e17
+
+    epeak = lorentzian_gaussian_background_func(theta_view, *parms)
+    escaled = epeak * (energy / e_zhaires_tau_shower) * (r_zhaires_tau_shower / distance_shower_to_detector )
+    return escaled
+   
+############
+# Now test that this parameterization will work for several decay altitudes
+def efield_anita_generic_parameterization_decay(energy, decay_altitude, distance_shower_to_detector, theta_view):
+    
+    # Parameterization for a 10^17 eV tau shower at zenith angle of 60deg / emergence angle 30deg
+    # ground elevation of 3 km, detector altitude of 37 km and different decay altitudes 
+
+    # The first row in the array sis for decay altitude of 0 km; the last is 9 km.
+    parm_array = np.array([[  1.74467904e-04,   7.63866727e-01,   8.77653517e-01,  1.55970631e-01, 1.66957500e-06,   1.00000000e+00],
+                           [  1.99696451e-04,   6.21403627e-01,   7.68656948e-01,  1.62155531e-01, 3.59185823e-07,   3.44511913e-07],
+                           [  2.31546719e-04,   8.19862178e-01,   6.72984202e-01,  1.63150020e-01, 2.60513430e-06,   9.64407268e-02],
+                           [  2.63833633e-04,   6.00079563e-01,   5.70486369e-01,  1.63871081e-01, 1.39574219e-06,   1.00000000e+00],
+                           [  2.80864266e-04,   6.78254444e-01,   4.72776446e-01,  1.71672019e-01, 5.77921580e-06,   4.34553854e-01],
+                           [  3.17318501e-04,   8.11459190e-01,   4.02198021e-01,  1.70212480e-01, 9.96559946e-06,   2.21691882e-01],
+                           [  2.86854486e-04,   8.16986311e-01,   3.08890072e-01,  1.77961387e-01, 9.99999999e-06,   1.06078872e-01],
+                           [  2.89818471e-04,   8.15486187e-01,   2.45378525e-01,  1.80607523e-01, 9.99999536e-06,   4.35679248e-02],
+                           [  2.58729422e-04,   9.12020646e-01,   1.82649564e-01,  1.88871931e-01, 9.99999785e-06,   2.59300117e-02],
+                           [  1.93973823e-04,   9.99999455e-01,   1.03194543e-01,  1.86353972e-01, 4.35152861e-06,   9.99999999e-01]])
+    
+    decay_altitude_list = np.array([0,1,2,3,4,5,6,7,8,9])
+    escaled = np.zeros(len(energy))
+    for i in range(len(theta_view)):
+    	i_d  = find_nearest(decay_altitude_list, decay_altitude[i], lower_bound = 0)[0]
+	if( i_d > -1): # leave the electric field zero for the ones that are not above ground level
+		nearest_decay_altitude = decay_altitude_list[i_d]
+		parms = parm_array[nearest_decay_altitude]
+    		epeak = lorentzian_gaussian_background_func(theta_view[i], *parms)
+     
+    		# r_parm_array = np.array([ 86.4174073961 ,  65.4677078729 ,  63.4691177949 ,  61.4714655076 ,  
+    		#                59.4747492519 ,  57.4789672742 ,  55.4841178256 ,  53.4901991629 ,
+    		#               51.4972095476 ,  49.5051472466  ])
+    		#r_zhaires_tau_shower = r_parm_array[nearest_decay_altitude]
+    		r_zhaires_tau_shower = get_distance_decay_to_detector_zenith_exit(2, nearest_decay_altitude, 37, 60)
+    		e_zhaires_tau_shower = 1e17
+    		escaled[i] = epeak * (energy[i] / e_zhaires_tau_shower) * (r_zhaires_tau_shower / distance_shower_to_detector[i] )
+    return escaled
+############
+# useful to find the nearest zenith angle and/or decay altitude for the lookup table of parameterization
+##########
+def find_nearest(array, values, lower_bound=None, upper_bound=None):
+    # finds the nearest values in the arrays
+    # if the values are outside the desire range, sets the index to -1
+    values = np.atleast_1d(values)
+    indices = np.abs(np.int64(np.subtract.outer(array, values))).argmin(0)
+    out = array[indices]
+    if( lower_bound != None):
+        bound_ind = np.where(values < lower_bound)
+        indices[bound_ind] = -1
+    if( upper_bound != None):
+        bound_ind = np.where(values > upper_bound)
+        indices[bound_ind] = -1
+    return indices
+
+############
+# Now test that this parameterization will work for several decay altitudes and zenith angles
+def efield_anita_generic_parameterization_decay_zenith(energy, decay_altitude, zenith_exit_deg, distance_shower_to_detector, theta_view, parm_2d):
+    
+    # Parameterization for a 10^17 eV tau shower at zenith angle of 60deg / emergence angle 30deg
+    # ground elevation of 3 km, detector altitude of 37 km
+    #
+    # The first row in the array sis for decay altitude of 0 km; the last is 9 km.
+    
+    # these are the simulation arrays used to generate the parameterizations
+    zenith_list = np.array([50, 55, 60, 65, 70, 75, 80, 85, 87, 89])
+    decay_altitude_list = np.array([0,1,2,3,4,5,6,7,8,9])
+
+    escaled = np.zeros(len(energy))
+    for i in range(len(theta_view)):
+	if decay_altitude[i] > 0: # if the decay altitude < 0, leave the electric field at 0
+
+		# find the nearest neighbor for both the zenith angle at the exit point and the decay alttidue
+		i_ze = find_nearest(zenith_list, zenith_exit_deg[i])[0]
+		i_d  = find_nearest(decay_altitude_list, decay_altitude[i], lower_bound = 0)[0]
+	 
+		# if the decay altitude is < 0, then throw this event out
+		if i_d >= 0:	
+			nearest_zenith_angle = zenith_list[i_ze]
+			nearest_decay_altitude = decay_altitude_list[i_d]
+			parms = parm_2d[i_ze, i_d]
+
+			epeak = lorentzian_gaussian_background_func(theta_view[i], *parms)
+			# Distance from the shower to the detector for the parameterized LDFs 
+			# at different decay altitudes and decay zenith angles
+			zhaires_sim_icethick = 2.0
+			zhaires_sim_detector_altitude = 37.
+			e_zhaires_tau_shower = 1e17
+			r_zhaires_tau_shower = get_distance_decay_to_detector_zenith_exit(zhaires_sim_icethick , nearest_decay_altitude,
+									   zhaires_sim_detector_altitude, nearest_zenith_angle)
+	    		escaled[i] = epeak * (energy[i] / e_zhaires_tau_shower) * (r_zhaires_tau_shower / distance_shower_to_detector[i] )
+    return escaled
+
+####################################################################################
 
 def E_to_V_signal(E_pk, Gain_dB, freq_MHz, Z_A, Z_L, Nphased=1):
     # Derived assuming:
@@ -178,8 +323,7 @@ def E_to_V_signal(E_pk, Gain_dB, freq_MHz, Z_A, Z_L, Nphased=1):
     #		A : antenna aperture = \lambda^2/(4pi) G eff_load eff_pol 
     #		eff_load: load mismatch factor eff_load = (1 - Gamma^2), where Gamma is the reflection coefficient = (Z_L - Z_A*)/(Z_L + A_Z);	assuming that we have a perfect match
     #		eff_pol : polarization mismatch factor; assuming that this is built into ZHAireS pulses
-   
-        # calculate the reflection coefficient
+    # calculate the reflection coefficient
     Gamma = reflection_coefficient(Z_A, Z_L)
     eff_load = 1. - np.abs(Gamma)**2
 
@@ -272,6 +416,27 @@ def get_distance_to_detector(x_pos, y_pos, z_pos, x_det, y_det, z_det):
     return np.sqrt( x_pd**2 + y_pd**2 + z_pd**2 )
 
 ####################################################################################
+def update_exit_point(k_x, k_y, k_z, x_exit, y_exit, z_exit, icethick_geom, icethick_now):
+    # Assuming that the geometric sims are run with one ice thickness
+    # and these sims are run with a different ice thickness" 
+    r_exit_geom = np.sqrt(x_exit**2 + y_exit**2 + z_exit**2)
+    r_exit_new  = r_exit_geom + (icethick_now - icethick_geom)
+    
+    # define a new vector along the r^hat direction
+    # the dot product of the unit vecto rhat and k-hat gives the angle 
+    # of the cord through the ice
+    cosTh = 1./r_exit_geom *( x_exit * k_x + y_exit * k_y + z_exit * k_z )
+    
+    a = 1.0
+    b = 2 * r_exit_geom * cosTh 
+    c = (r_exit_geom**2 - r_exit_new**2)
+    d = (-b + np.sqrt(b**2 - 4.*a*c) )/(2.*a)
+    
+    x_exit = x_exit +  d * k_x
+    y_exit = y_exit +  d * k_y
+    z_exit = z_exit +  d * k_z
+    return x_exit, y_exit, z_exit 
+    
 
 def decay_point_geom(k_x, k_y, k_z, x_exit, y_exit, z_exit, X0_decay, x_det, y_det, z_det):
     #def decay_point_geom(k_x, k_y, k_z, x_exit, y_exit, z_exit, X0_decay, x_det, y_det, z_det, emergence_angle):
@@ -292,6 +457,21 @@ def decay_point_geom(k_x, k_y, k_z, x_exit, y_exit, z_exit, X0_decay, x_det, y_d
     decay_dist_to_detector = get_distance_to_detector(x_decay, y_decay, z_decay, x_det, y_det, z_det )
     
     return x_decay, y_decay, z_decay, decay_view_angle, decay_dist_to_detector
+
+def get_altitude(x, y, z, ground_altitude=Earth_radius):
+   # finds the altitude of the decay point, given a ground altitude relative to the center of the
+   # Earth and the decay position in Cartesian coordinates
+   r = np.sqrt(x**2 + y**2 + z**2)
+   return r - ground_altitude
+
+def get_zenith_angle(k_x, k_y, k_z, x, y, z):
+	# finds the zenith angle relative to the Earth normal for a vector
+	# defined by a Cartesian point (x,y,z) and it's propagation direction (k-hat)
+	r = np.sqrt(x*x + y*y + z*z)
+	# the zenith angle is the angle between n-hat (the normal to the surface)
+	# and the propagation direction of the shower k-hat
+	cos_zenith = k_x * x / r + k_y * y / r + k_z * z / r
+	return np.arccos(cos_zenith) # radians
 
 ####################################################################################
 
@@ -316,7 +496,64 @@ def distance_detector_to_ground(zenith_angle_rad, ground_elevation, detector_alt
 	return d
 	
 ####################################################################################
+def get_X0( ground_elevation, decay_altitude, zenith_exit_deg, R_e = Earth_radius):
+    a = 1
+    b = 2*np.cos(zenith_exit_deg*np.pi/180.)*(R_e + ground_elevation)
+    c = (R_e + ground_elevation)**2 - (R_e + ground_elevation + decay_altitude)**2
+    X0 =( -b + np.sqrt(b**2 - 4*a*c) )/(2*a)
+    return X0
 
+def get_decay_zenith_angle(ground_elevation, decay_altitude, X0, R_e=Earth_radius):
+    A = X0
+    B = R_e + ground_elevation + decay_altitude
+    C = R_e + ground_elevation
+    
+    cosZenithDecay = (A**2 + B**2 - C**2) / (2*A*B)
+    return 180./np.pi * np.arccos(cosZenithDecay)
+
+def get_distance_decay_to_detector(ground_elevation, 
+                                   decay_altitude, detector_altitude,
+                                   zenith_decay_deg, R_e=Earth_radius):
+    a = 1
+    b = 2*np.cos(zenith_decay_deg*np.pi/180.)*(R_e + ground_elevation + decay_altitude)
+    c = (R_e + ground_elevation + decay_altitude)**2 - (R_e + detector_altitude)**2
+    d =( -b + np.sqrt(b**2 - 4*a*c) )/(2*a)
+    return d
+
+def get_distance_decay_to_detector_zenith_exit(ground_elevation, 
+                                   decay_altitude, detector_altitude,
+                                   zenith_exit_deg, R_e=Earth_radius):
+    # finds the distance between the two points defined by the
+    # decay altitude, detector altitude, and the zenith angle at the point
+    if( decay_altitude ==0 ):
+        return get_X0( ground_elevation, detector_altitude, zenith_exit_deg)
+    
+    X0 = get_X0(ground_elevation, decay_altitude, zenith_exit_deg)
+    zenith_decay_deg = get_decay_zenith_angle(ground_elevation, decay_altitude, X0)
+    return get_distance_decay_to_detector(ground_elevation, decay_altitude, 
+                                          detector_altitude, zenith_decay_deg)
+
+def get_geometric_zenith_angle(x_det, y_det, z_det, x_exit, y_exit, z_exit):
+    # geometric zenith angle at the exit point 
+    # comes from the dot product between the r-vector to the exit point and
+    # the vector pointing from the exit point ot the detector
+    r_det_exit = np.sqrt(pow(x_exit-x_det, 2) + pow(y_exit-y_det,2) + pow(z_exit-z_det, 2))
+    r_exit = np.sqrt(x_exit*x_exit + y_exit*y_exit + z_exit*z_exit)
+    r_det = np.sqrt(x_det*x_det + y_det*y_det + z_det*z_det)
+
+    n_x = x_exit/r_exit
+    n_y = y_exit/r_exit
+    n_z = z_exit/r_exit
+    # this is the geometry k-vector!
+    kg_x = (x_det - x_exit) / r_det_exit
+    kg_y = (y_det - y_exit) / r_det_exit
+    kg_z = (z_det - z_exit) / r_det_exit
+
+    cosZe_geom = n_x * kg_x + n_y * kg_y + n_z * kg_z
+    zenith = np.arccos(cosZe_geom)
+    return zenith
+
+####################################################################################
 
 def GEOM(altitude, num_events, view_angle_cut_deg = 5.):
     ##############################################
@@ -356,7 +593,7 @@ def load_tau_LUTs(LUT_file_name):
     for k in range(0, len(th_exit_array)):
         P_exit.append(float(len(data_array[k]))/float(num_sim[k]))
     return np.array(90. + th_exit_array), np.array(P_exit), np.array(data_array)
-    
+
 ####################################################################################
 
 def parse_input_args(input_arg_string):
@@ -372,8 +609,27 @@ def parse_input_args(input_arg_string):
     return input_dict
 
 ####################################################################################
+# Epk-pk thresholds
+# 284e-6 anita-3 446e-6 V/m anita-1
 
-def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_ang, f_Lo, f_High, outTag='test', N=-1, noise='default', Gain_dB=10.0, Nphased=1):
+def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_ang, f_Lo, f_High, outTag='test', 
+			N=-1, noise='default', Gain_dB=10.0, Nphased=1, LUT=False, icethick_geom = 0.0, Epk_to_pk_threshold =  284e-6 ): 
+    
+    print "Inputs to A_OMEGA_tau_exit:\n=============================="
+    print "geom_file_name", geom_file_name
+    print "LUT_file_name", LUT_file_name
+    print "EFIELD_LUT_file_name", EFIELD_LUT_file_name
+    print "cut_ang", cut_ang
+    print "Bandwidth f_Lo, f_High", f_Lo, f_High
+    print "Output Tag: ", outTag
+    print "N", N
+    print "Gain_dB", Gain_dB
+    print "Nphased", Nphased
+    print "LUT", LUT
+    print "icethick_geom ", icethick_geom
+    Epk_to_pk_threshold = float(Epk_to_pk_threshold)
+    print "Epeak-to-peak_threshold ", Epk_to_pk_threshold
+
 
     # 1. Load geometry file
     GEOM = np.load(geom_file_name)
@@ -402,12 +658,12 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     altitude = float(GEOM_inputs['altitude'])
     GEOM.close()
    
-    # Set up the detector position
+    # 2. Set up the detector position
     x_det = 0.
     y_det = 0.
     z_det = altitude + Earth_radius
     
-    # 2. Impose a viewing angle cut
+    # 3. Impose a viewing angle cut
     view_cut = exit_view_angle*180./np.pi<cut_ang
     N_cut = len(cos_theta_exit[view_cut])
     A_Omega = A_geom* float(N_cut) / float(N_tot)
@@ -416,10 +672,10 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     dist_exit_to_detector = get_distance_to_detector(x_exit, y_exit, z_exit, x_det, y_det, z_det)[view_cut] 
     GEOM_theta_exit = np.arccos(cos_theta_exit[view_cut])*180./np.pi
     exit_view_angle = exit_view_angle[view_cut] #radians
-    zenith_angle = np.arccos(cos_theta_exit) # radians
-    theta_emergence = np.pi/2. - zenith_angle # radians
+    zenith_angle_exit = np.arccos(cos_theta_exit) # radians
+    theta_emergence = np.pi/2. - zenith_angle_exit # radians
     
-    # 3. set up some arrays to be calculated on the fly
+    # 7. set up some arrays to be calculated on the fly
     dist_decay_to_detector = np.zeros(len(dist_exit_to_detector))
     x_decay = np.zeros(len(x_exit[view_cut]))
     y_decay = np.zeros(len(y_exit[view_cut]))
@@ -428,8 +684,14 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     X0_dist = np.zeros(len(dist_exit_to_detector))
     log10_tau_energy = np.zeros(len(exit_view_angle))
     Peak_Voltage_SNR = np.zeros(len(exit_view_angle))
+    zenith_angle_geom = np.zeros(len(exit_view_angle))
+
+    # 8. Set up histogram for the differential acceptance
+    binwidth=0.3 # 0.3deg wide bins
+    emerge_angle_bins = np.arange(0., 90.+ binwidth, binwidth)
+    nsim_emerge_angle = np.zeros(len(emerge_angle_bins))
     
-    # 4. Compute the noise in this band
+    # 9. Compute the noise in this band
     #       integrating in 10-MHz steps, to match the frequency bins of the peak voltage
     df = 10.# MHz
     noises = noise_voltage(f_Lo, f_High, df,  Z_L, Z_A, Gain_dB, Nphased) # factor of 1e6 because noise temperature is in V/Hz.
@@ -448,18 +710,26 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     
     # 5. Load Energy Look-up Table
     print "Loading energy look-up table: ", LUT_file_name
-    LUT_zen_exit, LUT_P_exit, LUT_log10_E_tau = load_tau_LUTs(LUT_file_name)
+    LUT_th_exit, LUT_P_exit, LUT_log10_E_tau = load_tau_LUTs(LUT_file_name)
     P_LUT = np.zeros(len(x_exit[view_cut]))   # zero until it is
     P_range = np.zeros(len(x_exit[view_cut])) # zero until it is proven to decay before it passes the detector
     P_det = np.zeros(len(x_exit[view_cut]))   # zero until it is proven to be detectable
-
+    ice_thick_match = re.match( r'.*/(\d+\.\d+)km\_ice.*', LUT_file_name)
+    ice_thick = 2.0
+    if ice_thick_match:
+    	ice_thick = float(ice_thick_match.group(1))
+    print "Ice thickness ", ice_thick, " km"
 
     # 6. Load the Efield interpolator for this altitude 
     #    N. B.: EField_LUT_file_name should have the altitude in the file name
-    global efield_interpolator_list
-    efield_interpolator_list = load_efield_interpolator(EFIELD_LUT_file_name)
-    
-    # 7. Loop Through Geometry Events
+    if LUT:
+    	global efield_interpolator_list
+    	efield_interpolator_list = load_efield_interpolator(EFIELD_LUT_file_name)
+    else:
+    	global parm_2d 
+	parm_2d = load_efield_parameterization()
+
+    # 11. Loop Through Geometry Events
     sum_P_exit = 0.
     sum_P_exit_P_range = 0.	     # zero until it is proven to decay before it passes the detector
     sum_P_exit_P_range_P_det = 0.    # zero until it is proven to be detectable
@@ -467,15 +737,22 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     ranged_events = []
     all_events = []
     for k in range(0,len(GEOM_theta_exit)):
-        # 7.1 Get LUT exit angle closest to geometry exit angle. Note that both of these are zenith angles.
-        idx = np.argmin(np.abs(LUT_zen_exit - GEOM_theta_exit[k]))
+
+	# 7.1 Get LUT exit angle closest to geometry exit angle. Note these are both zenith angles. The GEOM_theta_exit is the zenith angle of the particle
+        idx = np.argmin(np.abs(LUT_th_exit - GEOM_theta_exit[k]))
         # 7.2 Get tau lepton energy and decay position
         P_LUT[k] = LUT_P_exit[idx]
-        if( P_LUT[k] > 1.e-15):  # make sure the probability of this event is non-zero  
+	if( P_LUT[k] > 1.e-15):  # make sure the probability of this event is non-zero  
             log10_tau_energy[k] = LUT_log10_E_tau[idx][np.random.randint(0,len(LUT_log10_E_tau[idx]))] # random tau energy
             decay_range = tau_lepton_decay_range(log10_tau_energy[k])                      # estimated decay range
-            X0_dist[k] = np.random.exponential(scale=decay_range)                          # sample exponentially distributed decay positions
-            x_decay[k], y_decay[k], z_decay[k], decay_view_angle[k], dist_decay_to_detector[k] = decay_point_geom(k_x[k], k_y[k], k_z[k], x_exit[k], y_exit[k], z_exit[k], X0_dist[k], x_det, y_det, z_det)
+	    x_exit[k], y_exit[k], z_exit[k] = update_exit_point(k_x[k], k_y[k], k_z[k], x_exit[k], y_exit[k], z_exit[k], icethick_geom, ice_thick)
+	
+	    # the exit point and the detector position define the exit point zenith angle and emergence angle
+	    zenith_angle_geom[k] = get_geometric_zenith_angle(x_det, y_det, z_det, x_exit[k], y_exit[k], z_exit[k]) # radians, zenith angle in the geometry tables at the exit point
+
+	    # sample exponentially distributed decay positions	
+	    X0_dist[k] = np.random.exponential(scale=decay_range)                          
+	    x_decay[k], y_decay[k], z_decay[k], decay_view_angle[k], dist_decay_to_detector[k] = decay_point_geom(k_x[k], k_y[k], k_z[k], x_exit[k], y_exit[k], z_exit[k], X0_dist[k], x_det, y_det, z_det)
             # If the event is contained within the range, then the probability is 1.
             # If the shower decays beyond the detector, then it has a negative x-position. 
 	    # The range probability in that case is zero.
@@ -485,7 +762,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
 	if(k%100000 == 0 and k>0):
 	    print 'Progress: %d events '%k, log10_tau_energy[k]
 
-    # 8. Calculate the electric field and voltage at the detector 
+    # 12. Calculate the electric field and voltage at the detector 
     # 
     # Electric field is calculated by summing the interpolated electric fields in 10-MHz subbands
     # perform array-wise interpolations (outside of the event loop) to minimize number of computations. 
@@ -493,25 +770,57 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     #	1. Interpolate electric field from ZHAireS simulations in 10 MHz bins
     #   2. Convert electric field to voltage based on detector model (gain, nphased, 
     #   3. Sum over all 10-MHz bins in the desired frequency band (f_Lo to f_High)
+    if( LUT ):
+    	Peak_Voltage = Voltage_interp( efield_interpolator_list, decay_view_angle*180./np.pi, zenith_angle_exit*180./np.pi, f_Lo, f_High, log10_tau_energy, dist_exit_to_detector, dist_decay_to_detector, Gain_dB, Z_A, Z_L, Nphased)
+    else:
+	# 13.1 calculate the decay altitude and zenith angles
+	# the ZHAireS simulations ere all run at 2 km, so you assume that the altitude is calculated from the Earth radius + 2 km
+	decay_altitude = get_altitude(x_decay, y_decay, z_decay, ground_altitude=Earth_radius+ice_thick)
+	zhs_decay_altitude = get_altitude(x_decay, y_decay, z_decay, ground_altitude=Earth_radius+2.0)
+	zenith_angle_decay =  get_zenith_angle(k_x, k_y, k_z, x_decay, y_decay, z_decay) # zenith angle of the shower at the decay point
+	
+	# 0-km decay parameterization
+	#Peak_Efield = efield_anita_generic_parameterization(pow(10, log10_tau_energy), dist_decay_to_detector, decay_view_angle*180./np.pi, parm_decay_altitude=0)
+	# 5-km decay parameterization
+	#Peak_Efield   = efield_anita_generic_parameterization(pow(10, log10_tau_energy),dist_decay_to_detector, decay_view_angle*180./np.pi, parm_decay_altitude=5)
+	# multiple decay altitudes
+	#Peak_Efield   = efield_anita_generic_parameterization_decay(pow(10, log10_tau_energy), zhs_decay_altitude, dist_decay_to_detector, decay_view_angle*180./np.pi)
+	# multiple decay altitudes and zenith angles
+	Peak_Efield   = efield_anita_generic_parameterization_decay_zenith(pow(10, log10_tau_energy), zhs_decay_altitude, zenith_angle_decay*180./np.pi,  
+								dist_decay_to_detector,  decay_view_angle*180./np.pi, parm_2d)
+ 	# 13.2 generalizing to 300 MHz
+	Peak_Voltage = E_to_V_signal(Peak_Efield, Gain_dB, 300., Z_A, Z_L, Nphased)
+ 
+    Peak_Voltage_Threshold = E_to_V_signal(Epk_to_pk_threshold, Gain_dB, 300., Z_A, Z_L, Nphased) / Vpk_to_Vpkpk_conversion
+    print "Thresholds : Peak Voltage (not pk-to-pk) :", Peak_Voltage_Threshold, "V/m, Epeak-to-peak :", Epk_to_pk_threshold, " V/m, pk2pk to pk conversion ", Vpk_to_Vpkpk_conversion
 
-    Peak_Voltage = Voltage_interp( efield_interpolator_list, decay_view_angle*180./np.pi, zenith_angle*180./np.pi, f_Lo, f_High, log10_tau_energy, dist_exit_to_detector, dist_decay_to_detector, Gain_dB, Z_A, Z_L, Nphased)
-    
-    # 9. Check for trigger at the detector
+    # 14. Check for trigger at the detector
     for k in range(0,len(GEOM_theta_exit)):
         if( P_LUT[k] > 1.e-15):
             if( P_range[k] == 1.):
-                #Peak_Voltage = E_to_V_signal(Peak_E_field[k], Gain_dB, Nphased)
-                Peak_Voltage_SNR[k] = Peak_Voltage[k] / Noise_Voltage
-		ranged_events.append(np.array( [ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_Voltage[k], exit_view_angle[k]*180./np.pi, decay_view_angle[k]*180./np.pi,  zenith_angle[k]*180./np.pi ]))
+                #####
+		# ANITA defines SNR as = Vpk-pk / (2. * Vrms)
+		# Asymmetry of the pulse means that the Vpk-pk != 2 Vpk
+		# ZHAireS sims are Vpk, so we have to convert
+		Peak_Voltage_SNR[k] = Vpk_to_Vpkpk_conversion*Peak_Voltage[k] / (2.0 * Noise_Voltage )
+		#ranged_events.append(np.array( [ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_Voltage[k], exit_view_angle[k]*180./np.pi, decay_view_angle[k]*180./np.pi,  zenith_angle[k]*180./np.pi ]))
 
-                if(Peak_Voltage_SNR[k] > threshold_voltage_snr):
+                #if(Peak_Voltage_SNR[k] > threshold_voltage_snr):
+		if( Peak_Voltage[k] > Peak_Voltage_Threshold):
                     P_det[k] = 1.
-                    triggered_events.append(np.array( [ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_Voltage[k], exit_view_angle[k]*180./np.pi, decay_view_angle[k]*180./np.pi,  zenith_angle[k]*180./np.pi ]))
+                    triggered_events.append(np.array( [ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_Voltage[k], exit_view_angle[k]*180./np.pi, decay_view_angle[k]*180./np.pi,  zenith_angle_exit[k]*180./np.pi, zenith_angle_decay[k]*180./np.pi, zenith_angle_geom[k]*180./np.pi, decay_altitude[k], P_LUT[k], P_range[k], P_det[k]]))
         
 	sum_P_exit                += P_LUT[k]
         sum_P_exit_P_range        += P_LUT[k] * P_range[k]
         sum_P_exit_P_range_P_det  += P_LUT[k] * P_range[k] * P_det[k]
 	
+	# Each sample should report
+	#1. the emergence angle corresponding to the exit point.
+	#2. the emergence angle of the particle.
+	#3. P_exit of the emergence angle of the sampled particle.
+	#4. P_range of the sampled particle.
+	#5. P_trig of the sampled particle.
+
         if(k%100000 == 0 and k>0):
             #if(k%1== 0 and k>0):
             print 'After %d events: %d events triggered: '%(len(GEOM_theta_exit[0:k]), len(triggered_events))
@@ -521,7 +830,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
             print '\t %1.3e km^2 sr'%(A_Omega*sum_P_exit_P_range_P_det / float(k) )
             print '\t ',np.array(triggered_events).shape
             print ''
-        #all_events.append([ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_Voltage[k], Peak_Voltage_SNR[k], exit_view_angle[k]*180./np.pi, P_LUT[k], GEOM_theta_exit[k], decay_view_angle[k]*180./np.pi,  zenith_angle[k]*180./np.pi ])
+        #all_events.append(np.array( [ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_Voltage[k], exit_view_angle[k]*180./np.pi, decay_view_angle[k]*180./np.pi,  zenith_angle_exit[k]*180./np.pi, zenith_angle_decay[k]*180./np.pi, zenith_angle_geom[k]*180./np.pi, decay_altitude[k], P_LUT[k], P_range[k], P_det[k]]))
 
     print 'After all %d events, %d events triggered: '%(len(GEOM_theta_exit), len(triggered_events))
     print '\t %1.3e km^2 sr'%(A_Omega)
@@ -543,9 +852,10 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
                             A_Omega_trig     = A_Omega*sum_P_exit_P_range_P_det/float(N_cut),
 			    noise_voltage    = Noise_Voltage,
                             triggered_events = np.array(triggered_events),
-			    ranged_events = np.array(ranged_events)
-                            )
-                            #all_events = np.array(all_events))
+			    emerge_angle_bins = emerge_angle_bins,
+			    nsim_emerge_angle = nsim_emerge_angle)
+                             #ranged_events = np.array(ranged_events),
+			     #all_events = np.array(all_events))
 
     print "Wrote ", outTag+'.npz and ', outTag+'_events.npz'
 
