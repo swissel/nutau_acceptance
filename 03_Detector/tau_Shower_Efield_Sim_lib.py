@@ -608,9 +608,6 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     print "Nphased", Nphased
     print "LUT", LUT
     print "icethick_geom ", icethick_geom
-    Epk_to_pk_threshold = float(Epk_to_pk_threshold)
-    print "Epeak-to-peak_threshold ", Epk_to_pk_threshold
-
 
     # 1. Load geometry file
     GEOM = np.load(geom_file_name)
@@ -751,15 +748,15 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     #	1. Interpolate electric field from ZHAireS simulations in 10 MHz bins
     #   2. Convert electric field to voltage based on detector model (gain, nphased, 
     #   3. Sum over all 10-MHz bins in the desired frequency band (f_Lo to f_High)
+    
+    # 13.1 calculate the decay altitude and zenith angles
+    decay_altitude = get_altitude(x_decay, y_decay, z_decay, ground_altitude=Earth_radius+ice_thick)
+    zenith_angle_decay =  get_zenith_angle(k_x, k_y, k_z, x_decay, y_decay, z_decay) # zenith angle of the shower at the decay point
+
     if( LUT ):
-    	Peak_Voltage = Voltage_interp( efield_interpolator_list, decay_view_angle*180./np.pi, zenith_angle_exit*180./np.pi, f_Lo, f_High, log10_tau_energy, dist_exit_to_detector, dist_decay_to_detector, Gain_dB, Z_A, Z_L, Nphased)
+    	Peak_Voltage = Voltage_interp( efield_interpolator_list, decay_view_angle*180./np.pi, zenith_angle_decay*180./np.pi,
+				       f_Lo, f_High, log10_tau_energy, dist_exit_to_detector, dist_decay_to_detector, Gain_dB, Z_A, Z_L, Nphased)
     else:
-	# 13.1 calculate the decay altitude and zenith angles
-	# the ZHAireS simulations ere all run at 2 km, so you assume that the altitude is calculated from the Earth radius + 2 km
-	decay_altitude = get_altitude(x_decay, y_decay, z_decay, ground_altitude=Earth_radius+ice_thick)
-	zhs_decay_altitude = get_altitude(x_decay, y_decay, z_decay, ground_altitude=Earth_radius+2.0)
-	zenith_angle_decay =  get_zenith_angle(k_x, k_y, k_z, x_decay, y_decay, z_decay) # zenith angle of the shower at the decay point
-	
 	# 0-km decay parameterization
 	#Peak_Efield = efield_anita_generic_parameterization(pow(10, log10_tau_energy), dist_decay_to_detector, decay_view_angle*180./np.pi, parm_decay_altitude=0)
 	# 5-km decay parameterization
@@ -767,19 +764,21 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
 	# multiple decay altitudes
 	#Peak_Efield   = efield_anita_generic_parameterization_decay(pow(10, log10_tau_energy), zhs_decay_altitude, dist_decay_to_detector, decay_view_angle*180./np.pi)
 	# multiple decay altitudes and zenith angles
+	
+	# the ZHAireS simulations ere all run at ice thicknesses of  2 km, 
+    	# so you assume that the altitude is calculated from the Earth radius + 2 km
+	zhs_decay_altitude = get_altitude(x_decay, y_decay, z_decay, ground_altitude=Earth_radius+2.0)
 	Peak_Efield   = efield_anita_generic_parameterization_decay_zenith(pow(10, log10_tau_energy), zhs_decay_altitude, zenith_angle_decay*180./np.pi,  
 								dist_decay_to_detector,  decay_view_angle*180./np.pi, parm_2d)
  	# 13.2 generalizing to 300 MHz
-	Peak_Voltage = E_to_V_signal(Peak_Efield, Gain_dB, 300., Z_A, Z_L, Nphased)
- 
-    Peak_Voltage_Threshold = E_to_V_signal(Epk_to_pk_threshold, Gain_dB, 300., Z_A, Z_L, Nphased) / Vpk_to_Vpkpk_conversion
-    print "Thresholds : Peak Voltage (not pk-to-pk) :", Peak_Voltage_Threshold, "V/m, Epeak-to-peak :", Epk_to_pk_threshold, " V/m, pk2pk to pk conversion ", Vpk_to_Vpkpk_conversion
+	Peak_Voltage = E_to_V_signal(Peak_Efield, Gain_dB, 300., Z_A, Z_L, Nphased) 
+    	Peak_Voltage_Threshold = E_to_V_signal(Epk_to_pk_threshold, Gain_dB, 300., Z_A, Z_L, Nphased) / Vpk_to_Vpkpk_conversion
+    #print "Thresholds : Peak Voltage (not pk-to-pk) :", Peak_Voltage_Threshold, "V/m, Epeak-to-peak :", Epk_to_pk_threshold, " V/m, pk2pk to pk conversion ", Vpk_to_Vpkpk_conversion
 
     # 14. Check for trigger at the detector
     for k in range(0,len(GEOM_theta_exit)):
         if( P_LUT[k] > 1.e-15):
             if( P_range[k] == 1.):
-                #Peak_Voltage = E_to_V_signal(Peak_E_field[k], Gain_dB, Nphased)
                 Peak_Voltage_SNR[k] = Peak_Voltage[k] / Noise_Voltage
 		#ranged_events.append(np.array( [ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_Voltage[k], exit_view_angle[k]*180./np.pi, decay_view_angle[k]*180./np.pi,  zenith_angle[k]*180./np.pi ]))
 
