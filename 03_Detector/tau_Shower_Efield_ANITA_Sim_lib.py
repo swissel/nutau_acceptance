@@ -289,8 +289,9 @@ def efield_anita_generic_parameterization_decay_zenith(energy, decay_altitude, z
     decay_altitude_list = np.array([0,1,2,3,4,5,6,7,8,9])
 
     escaled = np.zeros(len(energy))
+    theta_peak = np.zeros(len(energy))
     for i in range(len(theta_view)):
-	if decay_altitude[i] > 0: # if the decay altitude < 0, leave the electric field at 0
+	if decay_altitude[i] >= 0: # if the decay altitude < 0, leave the electric field at 0
 
 		# find the nearest neighbor for both the zenith angle at the exit point and the decay alttidue
 		i_ze = find_nearest(zenith_list, zenith_exit_deg[i])[0]
@@ -311,7 +312,8 @@ def efield_anita_generic_parameterization_decay_zenith(energy, decay_altitude, z
 			r_zhaires_tau_shower = get_distance_decay_to_detector_zenith_exit(zhaires_sim_icethick , nearest_decay_altitude,
 									   zhaires_sim_detector_altitude, nearest_zenith_angle)
 	    		escaled[i] = epeak * (energy[i] / e_zhaires_tau_shower) * (r_zhaires_tau_shower / distance_shower_to_detector[i] )
-    return escaled
+			theta_peak[i] = parms[2]
+    return escaled, theta_peak
 
 ####################################################################################
 
@@ -613,7 +615,8 @@ def parse_input_args(input_arg_string):
 # 284e-6 anita-3 446e-6 V/m anita-1
 
 def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_ang, f_Lo, f_High, outTag='test', 
-			N=-1, noise='default', Gain_dB=10.0, Nphased=1, LUT=False, icethick_geom = 0.0, Epk_to_pk_threshold =  284e-6 ): 
+			N=-1, noise='default', Gain_dB=10.0, Nphased=1, LUT=False, icethick_geom = 0.0, 
+			Epk_to_pk_threshold =  284e-6, Max_Delta_Theta_View = 4.0 ): 
     
     print "Inputs to A_OMEGA_tau_exit:\n=============================="
     print "geom_file_name", geom_file_name
@@ -629,7 +632,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     print "icethick_geom ", icethick_geom
     Epk_to_pk_threshold = float(Epk_to_pk_threshold)
     print "Epeak-to-peak_threshold ", Epk_to_pk_threshold
-
+    print "Max_Delta_Theta_View ", Max_Delta_Theta_View
 
     # 1. Load geometry file
     GEOM = np.load(geom_file_name)
@@ -786,13 +789,16 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
 	# multiple decay altitudes
 	#Peak_Efield   = efield_anita_generic_parameterization_decay(pow(10, log10_tau_energy), zhs_decay_altitude, dist_decay_to_detector, decay_view_angle*180./np.pi)
 	# multiple decay altitudes and zenith angles
-	Peak_Efield   = efield_anita_generic_parameterization_decay_zenith(pow(10, log10_tau_energy), zhs_decay_altitude, zenith_angle_decay*180./np.pi,  
+	Peak_Efield, Theta_Peak  = efield_anita_generic_parameterization_decay_zenith(pow(10, log10_tau_energy), zhs_decay_altitude, zenith_angle_decay*180./np.pi,  
 								dist_decay_to_detector,  decay_view_angle*180./np.pi, parm_2d)
  	# 13.2 generalizing to 300 MHz
 	Peak_Voltage = E_to_V_signal(Peak_Efield, Gain_dB, 300., Z_A, Z_L, Nphased)
  
     Peak_Voltage_Threshold = E_to_V_signal(Epk_to_pk_threshold, Gain_dB, 300., Z_A, Z_L, Nphased) / Vpk_to_Vpkpk_conversion
     print "Thresholds : Peak Voltage (not pk-to-pk) :", Peak_Voltage_Threshold, "V/m, Epeak-to-peak :", Epk_to_pk_threshold, " V/m, pk2pk to pk conversion ", Vpk_to_Vpkpk_conversion
+    
+    # calculate how far off-cone we are, in degrees
+    decay_delta_view_angle = np.abs(Theta_Peak - decay_view_angle*180./np.pi)
 
     # 14. Check for trigger at the detector
     for k in range(0,len(GEOM_theta_exit)):
@@ -806,9 +812,9 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
 		#ranged_events.append(np.array( [ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_Voltage[k], exit_view_angle[k]*180./np.pi, decay_view_angle[k]*180./np.pi,  zenith_angle[k]*180./np.pi ]))
 
                 #if(Peak_Voltage_SNR[k] > threshold_voltage_snr):
-		if( Peak_Voltage[k] > Peak_Voltage_Threshold):
+		if( Peak_Voltage[k] > Peak_Voltage_Threshold and decay_delta_view_angle[k] < Max_Delta_Theta_View):
                     P_det[k] = 1.
-                    triggered_events.append(np.array( [ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_Voltage[k], exit_view_angle[k]*180./np.pi, decay_view_angle[k]*180./np.pi,  zenith_angle_exit[k]*180./np.pi, zenith_angle_decay[k]*180./np.pi, zenith_angle_geom[k]*180./np.pi, decay_altitude[k], P_LUT[k], P_range[k], P_det[k]]))
+                    triggered_events.append(np.array( [ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_Voltage[k], exit_view_angle[k]*180./np.pi, decay_view_angle[k]*180./np.pi,  zenith_angle_exit[k]*180./np.pi, zenith_angle_decay[k]*180./np.pi, zenith_angle_geom[k]*180./np.pi, decay_altitude[k], P_LUT[k], P_range[k], P_det[k]], decay_delta_view_angle[k]))
         
 	sum_P_exit                += P_LUT[k]
         sum_P_exit_P_range        += P_LUT[k] * P_range[k]
