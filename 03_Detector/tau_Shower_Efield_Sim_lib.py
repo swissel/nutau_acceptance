@@ -829,10 +829,10 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
 			    noise_voltage    = Noise_Voltage,
                             triggered_events = np.array(triggered_events),
 			    emerge_angle_bins = emerge_angle_bins,
-			    nsim_emerge_angle = nsim_emerge_angle)
-                             #ranged_events = np.array(ranged_events),
-			     #all_events = np.array(all_events))
-
+			    nsim_emerge_angle = nsim_emerge_angle,
+                            #ranged_events = np.array(ranged_events),
+			    #all_events = np.array(all_events))
+			    )
     print "Wrote ", outTag+'.npz and ', outTag+'_events.npz'
 
     exit()
