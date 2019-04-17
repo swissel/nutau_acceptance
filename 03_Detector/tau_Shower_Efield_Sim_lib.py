@@ -24,8 +24,8 @@ frac_sky = 0.5 # fraction of sky visible to the antenna
 #threshold_voltage =np.sqrt(kB*(T_ant+T_sys)*Z_load*BW) # V, this is 8.22 microVolts for the parameters given above
 
 #threshold_voltage = 72.e-6 # V, this is based on taking half the peak field for the weakest ANITA-1 EAS candidate. (0.466 mV/m convolved with antenna effective height at 300 MHz). 
-threshold_voltage_snr = 5.0
-print 'threshold_voltage_snr', threshold_voltage_snr
+#threshold_voltage_snr = 5.0
+#print 'threshold_voltage_snr', threshold_voltage_snr
 ####################################################################################
 
 def galactic_temperature(f_MHz):
@@ -107,7 +107,7 @@ def load_efield_interpolator(EFIELD_LUT_file_name):
     return interp_file['efield_interpolator_list'][()]
 ####################################################################################
 
-def E_field_interp(efield_interpolator_list, view_angle_deg, zenith_angle_deg, f_Lo, f_High, log10_tau_energy, distance_exit_km, distance_decay_km):
+'''def E_field_interp(efield_interpolator_list, view_angle_deg, zenith_angle_deg, f_Lo, f_High, log10_tau_energy, distance_exit_km, distance_decay_km):
     # Lorentzian beam pattern based on 10-MHz filtered subbands of Harm's results
     # Returns electric field peak in V/m
   
@@ -135,10 +135,43 @@ def E_field_interp(efield_interpolator_list, view_angle_deg, zenith_angle_deg, f
 
     E_field *= distance_exit_km/distance_decay_km   # distance to tau decay point correction
     E_field *= 10**(log10_tau_energy - 17.) # Energy scaling
+    return E_field'''
+
+def E_field_interp(efield_interpolator_list, view_angle_deg, zenith_angle_deg, 
+                   altitude, decay_altitude_km, f_Lo, f_High, 
+                   log10_tau_energy, distance_exit_km, distance_decay_km):
+    # Lorentzian beam pattern based on 10-MHz filtered subbands of Harm's results
+    # Returns electric field peak in V/m
+  
+    # Since the efields are stored in 10-MHz subbands
+    # integrate over the range from f_Lo to f_High in 10-MHz bands
+    E_field = np.zeros(len(distance_decay_km))
+
+    # Forcing the parameters outside the interpolation range to the edges
+    z = zenith_angle_deg.copy()
+    v = view_angle_deg.copy()
+    d = decay_altitude_km.copy()
+    z[z>89.] = 89.
+    z[z<55.] = 55.
+    v[v<0.04] = 0.04
+    v[v>3.16] = 3.16
+    d[d>altitude-0.5] = altitude-0.5
+
+    df = 10.
+    for freq in np.arange(f_Lo, f_High, df):
+        i_f_Lo = int(round(freq / df - 1))
+        E_field += efield_interpolator_list[i_f_Lo](z,d,v) 
+	
+    # account for ZHAIReS sims only extending to 3.16 deg 
+    #TODO: right now sampling a gaussian centered at zero to extrapolate to the wider angles. Should verify with ZHAireS sims out to wider angles
+    E_field[view_angle_deg>3.16] = 0.
+
+    E_field *= distance_exit_km/distance_decay_km   # distance to tau decay point correction
+    E_field *= 10**(log10_tau_energy - 17.) # Energy scaling
     return E_field
 ####################################################################################
 
-
+'''
 def Voltage_interp(efield_interpolator_list, view_angle_deg, zenith_angle_deg, f_Lo, f_High, log10_tau_energy, distance_exit_km, distance_decay_km, Gain_dB,Z_A, Z_L, Nphased=1):
     # Lorentzian beam pattern based on 10-MHz filtered subbands of Harm's results
     # Returns electric field peak in V/m
@@ -168,7 +201,44 @@ def Voltage_interp(efield_interpolator_list, view_angle_deg, zenith_angle_deg, f
     Voltage *= distance_exit_km/distance_decay_km   # distance to tau decay point correction
     Voltage *= 10**(log10_tau_energy - 17.) # Energy scaling
     return Voltage
+'''
 
+
+def Voltage_interp(efield_interpolator_list, view_angle_deg, zenith_angle_deg, 
+                   altitude, decay_altitude_km, f_Lo, f_High, 
+                   log10_tau_energy, distance_exit_km, distance_decay_km,
+		   Gain_dB,Z_A, Z_L, Nphased=1):
+    # Lorentzian beam pattern based on 10-MHz filtered subbands of Harm's results
+    # Returns electric field peak in V/m
+  
+    # Since the efields are stored in 10-MHz subbands
+    # integrate over the range from f_Lo to f_High in 10-MHz bands
+    Voltage = np.zeros(len(distance_decay_km))
+    #E_field = 0.
+    # TODO: Right now forcing the parameters outside the interpolation range to the edges
+    # shoudl replace with extrapolation
+    z = zenith_angle_deg.copy()
+    v = view_angle_deg.copy()
+    d = decay_altitude_km.copy()
+
+    z[z>89.] = 89.
+    z[z<55.] = 55.
+    v[v<0.04] = 0.04
+    v[v>3.16] = 3.16
+    d[d>altitude-0.5] = altitude-0.5
+
+    df = 10.
+    for freq in np.arange(f_Lo, f_High, df):
+        i_f_Lo = int(round(freq / df - 1))
+	# using the average frequency in the bin to calculate the voltage
+	Voltage += E_to_V_signal(efield_interpolator_list[i_f_Lo](z,d,v), Gain_dB, (freq+df)/2., Z_A, Z_L, Nphased)
+
+    # account for ZHAIReS sims only extending to 3.16 deg 
+    Voltage[view_angle_deg>3.16] = Voltage[view_angle_deg>3.16]*np.exp( -(view_angle_deg[view_angle_deg>3.16]-0.)**2 / (2*3.16)**2)
+    
+    Voltage *= distance_exit_km/distance_decay_km   # distance to tau decay point correction
+    Voltage *= 10**(log10_tau_energy - 17.) # Energy scaling
+    return Voltage
 ####################################################################################
 # Parameterization of efield simulations
 #
@@ -594,7 +664,7 @@ def parse_input_args(input_arg_string):
 
 ####################################################################################
 def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_ang, f_Lo, f_High, outTag='test', 
-			N=-1, noise='default', Gain_dB=10.0, Nphased=1, LUT=True, icethick_geom = 0.0): 
+			N=-1, noise='default', Gain_dB=10.0, Nphased=1, LUT=True, icethick_geom = 0.0, threshold_voltage_snr=5.0): 
     
     print "Inputs to A_OMEGA_tau_exit:\n=============================="
     print "geom_file_name", geom_file_name
@@ -755,6 +825,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
 
     if( LUT ):
     	Peak_Voltage = Voltage_interp( efield_interpolator_list, decay_view_angle*180./np.pi, zenith_angle_decay*180./np.pi,
+				       altitude, decay_altitude, 
 				       f_Lo, f_High, log10_tau_energy, dist_exit_to_detector, dist_decay_to_detector, Gain_dB, Z_A, Z_L, Nphased)
     else:
 	# 0-km decay parameterization
