@@ -824,7 +824,9 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     zenith_angle_decay =  get_zenith_angle(k_x, k_y, k_z, x_decay, y_decay, z_decay) # zenith angle of the shower at the decay point
 
     if( LUT ):
-    	Peak_Voltage = Voltage_interp( efield_interpolator_list, decay_view_angle*180./np.pi, zenith_angle_decay*180./np.pi,
+    	num = 5
+        print decay_view_angle[:num]*180./np.pi, zenith_angle_decay[:num]*180./np.pi, altitude, decay_altitude[:num], log10_tau_energy[:num], dist_exit_to_detector[:num], dist_decay_to_detector[:num], Gain_dB, Z_A, Z_L, Nphased
+        Peak_Voltage = Voltage_interp( efield_interpolator_list, decay_view_angle*180./np.pi, zenith_angle_decay*180./np.pi,
 				       altitude, decay_altitude, 
 				       f_Lo, f_High, log10_tau_energy, dist_exit_to_detector, dist_decay_to_detector, Gain_dB, Z_A, Z_L, Nphased)
     else:
