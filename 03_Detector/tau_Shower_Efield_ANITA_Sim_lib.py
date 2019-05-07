@@ -117,8 +117,9 @@ def load_efield_interpolator(EFIELD_LUT_file_name):
     interp_file = np.load(EFIELD_LUT_file_name)
     return interp_file['efield_interpolator_list'][()]
 
-def load_efield_parameterization():
-    npzfile = np.load(os.environ['TAU_ACC_ZHAIRES_DIR'] + "/anita_generic_parameterization.npz")
+def load_efield_parameterization(EFIELD_file_name):
+    #npzfile = np.load(os.environ['TAU_ACC_ZHAIRES_DIR'] + "/anita_generic_parameterization.npz")
+    npzfile = np.load(EFIELD_file_name)
     parm_2d = npzfile['parm_2d']
     return parm_2d
 ####################################################################################
@@ -730,7 +731,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     	efield_interpolator_list = load_efield_interpolator(EFIELD_LUT_file_name)
     else:
     	global parm_2d 
-	parm_2d = load_efield_parameterization()
+	parm_2d = load_efield_parameterization(EFIELD_LUT_file_name)
 
     # 11. Loop Through Geometry Events
     sum_P_exit = 0.
