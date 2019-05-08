@@ -1,6 +1,7 @@
 import numpy as np
 import os
 import re
+from Tau__Decay_Simulator import Tau_Decay_Simulator
 # tau_exit_num_events = 1.e6
 
 # Define constants
@@ -26,6 +27,7 @@ frac_sky = 0.5 # fraction of sky visible to the antenna
 #threshold_voltage = 72.e-6 # V, this is based on taking half the peak field for the weakest ANITA-1 EAS candidate. (0.466 mV/m convolved with antenna effective height at 300 MHz). 
 #threshold_voltage_snr = 5.0
 #print 'threshold_voltage_snr', threshold_voltage_snr
+
 ####################################################################################
 
 def galactic_temperature(f_MHz):
@@ -731,6 +733,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     decay_view_angle = np.zeros(len(exit_view_angle))
     X0_dist = np.zeros(len(dist_exit_to_detector))
     log10_tau_energy = np.zeros(len(exit_view_angle))
+    log10_shower_energy = np.zeros(len(exit_view_angle))
     Peak_Voltage_SNR = np.zeros(len(exit_view_angle))
     zenith_angle_geom = np.zeros(len(exit_view_angle))
 
@@ -776,6 +779,10 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     else:
     	global parm_2d 
 	parm_2d = load_efield_parameterization()
+    
+    # 7. Load the Tau Decay Simulator
+    ###
+    TDS = Tau_Decay_Simulator()
 
     # 11. Loop Through Geometry Events
     sum_P_exit = 0.
@@ -791,8 +798,15 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
         # 7.2 Get tau lepton energy and decay position
         P_LUT[k] = LUT_P_exit[idx]
 	if( P_LUT[k] > 1.e-15):  # make sure the probability of this event is non-zero  
+	    # sample the pexit lookup tables for the exiting tau energy
             log10_tau_energy[k] = LUT_log10_E_tau[idx][np.random.randint(0,len(LUT_log10_E_tau[idx]))] # random tau energy
-            decay_range = tau_lepton_decay_range(log10_tau_energy[k])                      # estimated decay range
+            # estimated decay range based on tau energy
+	    decay_range = tau_lepton_decay_range(log10_tau_energy[k])                     
+	    # sample the shower type --- 1 leptonic, 0 hadronic
+	    stp = TDS.sample_shower_type()
+	    # the energy that goes into the shower
+	    log10_shower_energy[k] = np.log10(TDS.sample_energy_fraction(stp) )  + log10_tau_energy[k]
+	    
 	    x_exit[k], y_exit[k], z_exit[k] = update_exit_point(k_x[k], k_y[k], k_z[k], x_exit[k], y_exit[k], z_exit[k], icethick_geom, ice_thick)
 	
 	    # the exit point and the detector position define the exit point zenith angle and emergence angle
@@ -824,11 +838,9 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     zenith_angle_decay =  get_zenith_angle(k_x, k_y, k_z, x_decay, y_decay, z_decay) # zenith angle of the shower at the decay point
 
     if( LUT ):
-    	num = 5
-        print decay_view_angle[:num]*180./np.pi, zenith_angle_decay[:num]*180./np.pi, altitude, decay_altitude[:num], log10_tau_energy[:num], dist_exit_to_detector[:num], dist_decay_to_detector[:num], Gain_dB, Z_A, Z_L, Nphased
         Peak_Voltage = Voltage_interp( efield_interpolator_list, decay_view_angle*180./np.pi, zenith_angle_decay*180./np.pi,
 				       altitude, decay_altitude, 
-				       f_Lo, f_High, log10_tau_energy, dist_exit_to_detector, dist_decay_to_detector, Gain_dB, Z_A, Z_L, Nphased)
+				       f_Lo, f_High, log10_shower_energy, dist_exit_to_detector, dist_decay_to_detector, Gain_dB, Z_A, Z_L, Nphased)
     else:
 	# 0-km decay parameterization
 	#Peak_Efield = efield_anita_generic_parameterization(pow(10, log10_tau_energy), dist_decay_to_detector, decay_view_angle*180./np.pi, parm_decay_altitude=0)
@@ -841,7 +853,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
 	# the ZHAireS simulations ere all run at ice thicknesses of  2 km, 
     	# so you assume that the altitude is calculated from the Earth radius + 2 km
 	zhs_decay_altitude = get_altitude(x_decay, y_decay, z_decay, ground_altitude=Earth_radius+2.0)
-	Peak_Efield   = efield_anita_generic_parameterization_decay_zenith(pow(10, log10_tau_energy), zhs_decay_altitude, zenith_angle_decay*180./np.pi,  
+	Peak_Efield   = efield_anita_generic_parameterization_decay_zenith(pow(10, log10_shower_energy), zhs_decay_altitude, zenith_angle_decay*180./np.pi,  
 								dist_decay_to_detector,  decay_view_angle*180./np.pi, parm_2d)
  	# 13.2 generalizing to 300 MHz
 	Peak_Voltage = E_to_V_signal(Peak_Efield, Gain_dB, 300., Z_A, Z_L, Nphased) 
@@ -857,7 +869,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
 
                 if(Peak_Voltage_SNR[k] > threshold_voltage_snr):
                     P_det[k] = 1.
-                    triggered_events.append(np.array( [ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_Voltage[k], exit_view_angle[k]*180./np.pi, decay_view_angle[k]*180./np.pi,  zenith_angle_exit[k]*180./np.pi, zenith_angle_decay[k]*180./np.pi, zenith_angle_geom[k]*180./np.pi, decay_altitude[k], P_LUT[k], P_range[k], P_det[k]]))
+                    triggered_events.append(np.array( [ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_Voltage[k], exit_view_angle[k]*180./np.pi, decay_view_angle[k]*180./np.pi,  zenith_angle_exit[k]*180./np.pi, zenith_angle_decay[k]*180./np.pi, zenith_angle_geom[k]*180./np.pi, decay_altitude[k], P_LUT[k], P_range[k], P_det[k], log10_shower_energy[k]))
         
 	sum_P_exit                += P_LUT[k]
         sum_P_exit_P_range        += P_LUT[k] * P_range[k]
