@@ -1,7 +1,8 @@
 import numpy as np
 import os
+import sys 
 import re
-from Tau__Decay_Simulator import Tau_Decay_Simulator
+from Tau_Decay_Simulator import Tau_Decay_Simulator
 # tau_exit_num_events = 1.e6
 
 # Define constants
@@ -26,7 +27,7 @@ frac_sky = 0.5 # fraction of sky visible to the antenna
 
 #threshold_voltage = 72.e-6 # V, this is based on taking half the peak field for the weakest ANITA-1 EAS candidate. (0.466 mV/m convolved with antenna effective height at 300 MHz). 
 #threshold_voltage_snr = 5.0
-#print 'threshold_voltage_snr', threshold_voltage_snr
+#print >> sys.stderr,  'threshold_voltage_snr', threshold_voltage_snr
 
 ####################################################################################
 
@@ -83,9 +84,9 @@ def noise_voltage(freq_min_MHz, freq_max_MHz, df,  Z_L, Z_A, Gain_dB, Nphased=1.
     # as you would expect from incoherent noise
     combined_temp = Nphased*(T_gal*frac_sky * eff_load + T_ice*(1.-frac_sky) * eff_load + T_sys)
 
-    #print np.sum(T_gal)
-    #print np.sum(combined_temp)
-    #print np.sqrt(np.sum(T_gal) * df * 1e6 * kB_W_Hz_K * Z_L )
+    #print >> sys.stderr,  np.sum(T_gal)
+    #print >> sys.stderr,  np.sum(combined_temp)
+    #print >> sys.stderr,  np.sqrt(np.sum(T_gal) * df * 1e6 * kB_W_Hz_K * Z_L )
     
     # this is in V (rms)
     combined_noise = np.sqrt( np.trapz(combined_temp) * df * 1e6 * kB_W_Hz_K * Z_L  )
@@ -257,7 +258,7 @@ def lorentzian_gaussian_background_func(psi, E_0, frac_gauss, gauss_peak,
 def efield_anita_generic_parameterization(energy, distance_shower_to_detector, theta_view, parm_decay_altitude=0): 
     if( parm_decay_altitude!= 5):
 	if parm_decay_altitude != 0:
-		print "Warning: Using parameterization for 0 km tau decay altitude, but requested ", parm_decay_altitude
+		print >> sys.stderr,  "Warning: Using parameterization for 0 km tau decay altitude, but requested ", parm_decay_altitude
     	# Parameterization for a 10^17 eV tau shower at zenith angle of 65deg / emergence angle 25deg
 	# decay altitude of 0 km, ground elevation of 3 km, detector altitude of 37 km
 	parms = [  1.41662197e-04,   8.10616766e-01,   9.35347123e-01,
@@ -386,7 +387,7 @@ def E_to_V_signal(E_pk, Gain_dB, freq_MHz, Z_A, Z_L, Nphased=1):
     # Radiation resistance of the antennas
     R_A = np.real(Z_A)
 
-    #print Gamma, R_A, Z_L / (Z_A + Z_L), eff_load, Z_A, Z_L 
+    #print >> sys.stderr,  Gamma, R_A, Z_L / (Z_A + Z_L), eff_load, Z_A, Z_L 
     V_A = 2. * E_pk * (speed_of_light*1.e3)/(freq_MHz * 1.e6) * np.sqrt(R_A/Z_0 * pow(10., Gain_dB/10.)/4./np.pi * eff_load) * Nphased
     V_L = V_A * Z_L / (Z_A + Z_L) # V_L = 1/2 * V_A for a perfectly matched antenna
     return V_L
@@ -437,7 +438,7 @@ def get_decay_range(tau_lepton_energy):
     tau_rest_frame_mass = 1.7768e9 # eV/c^2
     gamma = tau_lepton_energy / tau_rest_frame_mass
     L = gamma * tau_rest_frame_life_time * c # in km
-    #print '**L',L
+    #print >> sys.stderr,  '**L',L
     return np.random.exponential(L)
 
 ####################################################################################
@@ -660,7 +661,7 @@ def parse_input_args(input_arg_string):
     for val in vals:
         keys.append(val.split('=')[0].split()[-1])
         values.append(val.split('=')[1])
-        #print keys[-1], values[-1]
+        #print >> sys.stderr,  keys[-1], values[-1]
     input_dict = { keys[i] : values[i] for i in range(0,len(keys)) }
     return input_dict
 
@@ -668,32 +669,32 @@ def parse_input_args(input_arg_string):
 def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_ang, f_Lo, f_High, outTag='test', 
 			N=-1, noise='default', Gain_dB=10.0, Nphased=1, LUT=True, icethick_geom = 0.0, threshold_voltage_snr=5.0): 
     
-    print "Inputs to A_OMEGA_tau_exit:\n=============================="
-    print "geom_file_name", geom_file_name
-    print "LUT_file_name", LUT_file_name
-    print "EFIELD_LUT_file_name", EFIELD_LUT_file_name
-    print "cut_ang", cut_ang
-    print "Bandwidth f_Lo, f_High", f_Lo, f_High
-    print "Output Tag: ", outTag
-    print "N", N
-    print "Gain_dB", Gain_dB
-    print "Nphased", Nphased
-    print "LUT", LUT
-    print "icethick_geom ", icethick_geom
+    print >> sys.stderr,  "Inputs to A_OMEGA_tau_exit:\n=============================="
+    print >> sys.stderr,  "geom_file_name", geom_file_name
+    print >> sys.stderr,  "LUT_file_name", LUT_file_name
+    print >> sys.stderr,  "EFIELD_LUT_file_name", EFIELD_LUT_file_name
+    print >> sys.stderr,  "cut_ang", cut_ang
+    print >> sys.stderr,  "Bandwidth f_Lo, f_High", f_Lo, f_High
+    print >> sys.stderr,  "Output Tag: ", outTag
+    print >> sys.stderr,  "N", N
+    print >> sys.stderr,  "Gain_dB", Gain_dB
+    print >> sys.stderr,  "Nphased", Nphased
+    print >> sys.stderr,  "LUT", LUT
+    print >> sys.stderr,  "icethick_geom ", icethick_geom
 
     # 1. Load geometry file
     GEOM = np.load(geom_file_name)
     GEOM_inputs = parse_input_args(GEOM['input_args'])
-    print '\nGEOMETRY FILE INPUT ARGUMENTS\n', 
+    print >> sys.stderr,  '\nGEOMETRY FILE INPUT ARGUMENTS\n', 
     for key in GEOM_inputs.keys():
-        print '\t',key.ljust(20), GEOM_inputs[key]
+        print >> sys.stderr,  '\t',key.ljust(20), GEOM_inputs[key]
 
     if( N == -1):
     	N_tot = len(GEOM['cos_theta_exit'])
     else:
     	N_tot = int(N)
-    print 'Number of Geometry Events to scan', N_tot
-    print ''
+    print >> sys.stderr,  'Number of Geometry Events to scan', N_tot
+    print >> sys.stderr,  ''
 
     cos_theta_exit  = GEOM['cos_theta_exit'][0:N_tot]
     exit_view_angle = GEOM['exit_view_angle'][0:N_tot]
@@ -746,21 +747,21 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     #       integrating in 10-MHz steps, to match the frequency bins of the peak voltage
     df = 10.# MHz
     noises = noise_voltage(f_Lo, f_High, df,  Z_L, Z_A, Gain_dB, Nphased) # factor of 1e6 because noise temperature is in V/Hz.
-    print "Galactic Noise voltage ", noises[1]*1e6, " micro-Volts"
-    print "Galactic noise temperature K ", galactic_temperature(np.arange(f_Lo, f_High+df, df))[1], sum(galactic_temperature(np.arange(f_Lo, f_High+df, df))[1])
-    print "System noise ", noises[2]
+    print >> sys.stderr,  "Galactic Noise voltage ", noises[1]*1e6, " micro-Volts"
+    print >> sys.stderr,  "Galactic noise temperature K ", galactic_temperature(np.arange(f_Lo, f_High+df, df))[1], sum(galactic_temperature(np.arange(f_Lo, f_High+df, df))[1])
+    print >> sys.stderr,  "System noise ", noises[2]
     if( noise == 'sys'):
     	Noise_Voltage = noises[2]
-	print "Noise voltage ", Noise_Voltage*1e6, " micro-Volts, due to T_sys + T_ant"
+	print >> sys.stderr,  "Noise voltage ", Noise_Voltage*1e6, " micro-Volts, due to T_sys + T_ant"
     elif( noise == 'gal'):
     	Noise_Voltage = noises[1]
-	print "Noise voltage ", Noise_Voltage*1e6, " micro-Volts, due to G*T_gal"
+	print >> sys.stderr,  "Noise voltage ", Noise_Voltage*1e6, " micro-Volts, due to G*T_gal"
     else: # default is the combination
     	Noise_Voltage = noises[0]
-   	print "Noise voltage ", Noise_Voltage*1e6, " micro-Volts, due to G*T_gal + T_sys + T_ant"
+   	print >> sys.stderr,  "Noise voltage ", Noise_Voltage*1e6, " micro-Volts, due to G*T_gal + T_sys + T_ant"
     
     # 5. Load Energy Look-up Table
-    print "Loading energy look-up table: ", LUT_file_name
+    print >> sys.stderr,  "Loading energy look-up table: ", LUT_file_name
     LUT_th_exit, LUT_P_exit, LUT_log10_E_tau = load_tau_LUTs(LUT_file_name)
     P_LUT = np.zeros(len(x_exit[view_cut]))   # zero until it is
     P_range = np.zeros(len(x_exit[view_cut])) # zero until it is proven to decay before it passes the detector
@@ -769,7 +770,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     ice_thick = 2.0
     if ice_thick_match:
     	ice_thick = float(ice_thick_match.group(1))
-    print "Ice thickness ", ice_thick, " km"
+    print >> sys.stderr, "Ice thickness ", ice_thick, " km"
 
     # 6. Load the Efield interpolator for this altitude 
     #    N. B.: EField_LUT_file_name should have the altitude in the file name
@@ -791,6 +792,8 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     triggered_events = []
     #ranged_events = []
     all_events = []
+    f_hadrons = []
+    f_leptons = []
     for k in range(0,len(GEOM_theta_exit)):
 
 	# 7.1 Get LUT exit angle closest to geometry exit angle. Note these are both zenith angles. The GEOM_theta_exit is the zenith angle of the particle
@@ -805,7 +808,12 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
 	    # sample the shower type --- 1 leptonic, 0 hadronic
 	    stp = TDS.sample_shower_type()
 	    # the energy that goes into the shower
-	    log10_shower_energy[k] = np.log10(TDS.sample_energy_fraction(stp) )  + log10_tau_energy[k]
+	    efrac = TDS.sample_energy_fraction(stp)
+            if( stp == 0):
+                f_hadrons.append(efrac)
+            if( stp == 1):
+                f_leptons.append(efrac)
+            log10_shower_energy[k] = np.log10( efrac )  + log10_tau_energy[k]
 	    
 	    x_exit[k], y_exit[k], z_exit[k] = update_exit_point(k_x[k], k_y[k], k_z[k], x_exit[k], y_exit[k], z_exit[k], icethick_geom, ice_thick)
 	
@@ -822,8 +830,8 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
                 P_range[k] = 1.
 	
 	if(k%100000 == 0 and k>0):
-	    print 'Progress: %d events '%k, log10_tau_energy[k]
-
+	    print >> sys.stderr, 'Progress: %d events '%k, log10_tau_energy[k]
+            
     # 12. Calculate the electric field and voltage at the detector 
     # 
     # Electric field is calculated by summing the interpolated electric fields in 10-MHz subbands
@@ -858,7 +866,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
  	# 13.2 generalizing to 300 MHz
 	Peak_Voltage = E_to_V_signal(Peak_Efield, Gain_dB, 300., Z_A, Z_L, Nphased) 
     	Peak_Voltage_Threshold = E_to_V_signal(Epk_to_pk_threshold, Gain_dB, 300., Z_A, Z_L, Nphased) / Vpk_to_Vpkpk_conversion
-    #print "Thresholds : Peak Voltage (not pk-to-pk) :", Peak_Voltage_Threshold, "V/m, Epeak-to-peak :", Epk_to_pk_threshold, " V/m, pk2pk to pk conversion ", Vpk_to_Vpkpk_conversion
+    #print >> sys.stderr,  "Thresholds : Peak Voltage (not pk-to-pk) :", Peak_Voltage_Threshold, "V/m, Epeak-to-peak :", Epk_to_pk_threshold, " V/m, pk2pk to pk conversion ", Vpk_to_Vpkpk_conversion
 
     # 14. Check for trigger at the detector
     for k in range(0,len(GEOM_theta_exit)):
@@ -869,7 +877,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
 
                 if(Peak_Voltage_SNR[k] > threshold_voltage_snr):
                     P_det[k] = 1.
-                    triggered_events.append(np.array( [ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_Voltage[k], exit_view_angle[k]*180./np.pi, decay_view_angle[k]*180./np.pi,  zenith_angle_exit[k]*180./np.pi, zenith_angle_decay[k]*180./np.pi, zenith_angle_geom[k]*180./np.pi, decay_altitude[k], P_LUT[k], P_range[k], P_det[k], log10_shower_energy[k]))
+                    triggered_events.append(np.array( [ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_Voltage[k], exit_view_angle[k]*180./np.pi, decay_view_angle[k]*180./np.pi,  zenith_angle_exit[k]*180./np.pi, zenith_angle_decay[k]*180./np.pi, zenith_angle_geom[k]*180./np.pi, decay_altitude[k], P_LUT[k], P_range[k], P_det[k], log10_shower_energy[k] ]))
         
 	sum_P_exit                += P_LUT[k]
         sum_P_exit_P_range        += P_LUT[k] * P_range[k]
@@ -884,21 +892,21 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
 
         if(k%100000 == 0 and k>0):
             #if(k%1== 0 and k>0):
-            print 'After %d events: %d events triggered: '%(len(GEOM_theta_exit[0:k]), len(triggered_events))
-            print '\t %1.3e km^2 sr'%A_Omega
-            print '\t %1.3e km^2 sr'%(A_Omega*sum_P_exit / float(k))
-            print '\t %1.3e km^2 sr'%(A_Omega*sum_P_exit_P_range / float(k) )
-            print '\t %1.3e km^2 sr'%(A_Omega*sum_P_exit_P_range_P_det / float(k) )
-            print '\t ',np.array(triggered_events).shape
-            print ''
+            print >> sys.stderr,  'After %d events: %d events triggered: '%(len(GEOM_theta_exit[0:k]), len(triggered_events))
+            print >> sys.stderr,  '\t %1.3e km^2 sr'%A_Omega
+            print >> sys.stderr,  '\t %1.3e km^2 sr'%(A_Omega*sum_P_exit / float(k))
+            print >> sys.stderr,  '\t %1.3e km^2 sr'%(A_Omega*sum_P_exit_P_range / float(k) )
+            print >> sys.stderr,  '\t %1.3e km^2 sr'%(A_Omega*sum_P_exit_P_range_P_det / float(k) )
+            print >> sys.stderr,  '\t ',np.array(triggered_events).shape
+            print >> sys.stderr,  ''
         #all_events.append(np.array( [ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_Voltage[k], exit_view_angle[k]*180./np.pi, decay_view_angle[k]*180./np.pi,  zenith_angle_exit[k]*180./np.pi, zenith_angle_decay[k]*180./np.pi, zenith_angle_geom[k]*180./np.pi, decay_altitude[k], P_LUT[k], P_range[k], P_det[k]]))
 
-    print 'After all %d events, %d events triggered: '%(len(GEOM_theta_exit), len(triggered_events))
-    print '\t %1.3e km^2 sr'%(A_Omega)
-    print '\t %1.3e km^2 sr, %d events exited Earth'%(A_Omega*sum_P_exit/float(N_cut),N_tot*sum_P_exit/float(N_cut) )
-    print '\t %1.3e km^2 sr, %d events decayed before detector'%(A_Omega*sum_P_exit_P_range/float(N_cut), N_tot*sum_P_exit_P_range/float(N_cut))
-    print '\t %1.3e km^2 sr, %d events triggered'%(A_Omega*sum_P_exit_P_range_P_det/float(N_cut), N_tot*sum_P_exit_P_range_P_det/float(N_cut))
-
+    print >> sys.stderr,  'After all %d events, %d events triggered: '%(len(GEOM_theta_exit), len(triggered_events))
+    print >> sys.stderr,  '\t %1.3e km^2 sr'%(A_Omega)
+    print >> sys.stderr,  '\t %1.3e km^2 sr, %d events exited Earth'%(A_Omega*sum_P_exit/float(N_cut),N_tot*sum_P_exit/float(N_cut) )
+    print >> sys.stderr,  '\t %1.3e km^2 sr, %d events decayed before detector'%(A_Omega*sum_P_exit_P_range/float(N_cut), N_tot*sum_P_exit_P_range/float(N_cut))
+    print >> sys.stderr,  '\t %1.3e km^2 sr, %d events triggered'%(A_Omega*sum_P_exit_P_range_P_det/float(N_cut), N_tot*sum_P_exit_P_range_P_det/float(N_cut))
+    np.savez("energyfraction.npz", f_hadrons=f_hadrons, f_leptons=f_leptons)
     np.savez(outTag+'.npz', A_Omega_start    = A_Omega,
                             A_Omega_exit     = A_Omega*sum_P_exit/float(N_cut),
                             A_Omega_range    = A_Omega*sum_P_exit_P_range/float(N_cut),
@@ -918,7 +926,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
                             #ranged_events = np.array(ranged_events),
 			    #all_events = np.array(all_events))
 			    )
-    print "Wrote ", outTag+'.npz and ', outTag+'_events.npz'
+    print >> sys.stderr,  "Wrote ", outTag+'.npz and ', outTag+'_events.npz'
 
     exit()
 
