@@ -41,11 +41,11 @@ class DecayParticle:
 		self.shower_type = None
 
 class Tau_Decay_Simulator:
-    def __init__(self):
-        self.load_Pythia_Table()   
+    def __init__(self, pol='negative'):
+        self.load_Pythia_Table(pol=pol)   
         self.tau_mass_eV = 1.77682e9 # eV/c^2
      
-    def load_Pythia_Table(self):
+    def load_Pythia_Table(self, pol='negative'):
         '''
         Pythia data run by Austin Cummings
         '''
@@ -54,7 +54,15 @@ class Tau_Decay_Simulator:
 
 	self.tau_decays = []
 	part_types = []
-	f=open('tau_decay_2_boosted.txt','r')
+	if( pol == 'negative'):
+		f=open('negativepolnew.txt','r')
+		print("Reading negativepolnew.txt")
+	elif( pol == 'positive'):
+		f=open('positivepolnew.txt','r')
+		print("Reading positivepolnew.txt")
+	else:
+		print("Please specify either negative (default) or positive polarity for the Pythia runs")
+
 	for line in f:
 		all_parts = line.split(';')[:-1]
 		single_tau_decay = []
@@ -125,13 +133,32 @@ class Tau_Decay_Simulator:
 	samps = np.random.choice(bins,num_events, p=weights)
 	return samps
 
-    def lin_interp(self, x, x1, x2, y1, y2):
-        m = (y2-y1)/(x2-x1)
-        b = y2 - m*x2
-        return m*x + b 
-
     def sample_range(self, E_tau_eV, num_events):
         d_ref = 4.9 # km 
         E_ref = 1.e17 # eV
         d_val = E_tau_eV / E_ref * d_ref
         return np.random.exponential(d_val, num_events)
+
+    def energy_fraction(self,type='shower', rebin_factor=200):
+    	n_original_bins = len(self.shower_frac)
+	n_new_bins = int(np.floor(n_original_bins/rebin_factor))
+	
+	if( type == 'shower'):
+		original_bins = (self.shower_energybins[:-1] + self.shower_energybins[1:])/2.
+		original_weights = self.shower_frac
+	elif( type =='hadron'):
+		original_bins = (self.hadron_energybins[:-1] + self.hadron_energybins[1:])/2.
+		original_weights = self.hadron_frac
+	elif( type =='em'):
+		original_bins = (self.em_energybins[:-1] + self.em_energybins[1:])/2.
+		original_weights = self.em_frac
+
+	if( n_original_bins % rebin_factor != 0):
+		print("I can only rebin the array of len(%d) by a number that is a integer divisor of it."%original_bins)
+		return original_bins, original_weights
+
+	new_bins = original_bins.reshape( n_original_bins/rebin_factor, rebin_factor).mean(1)
+	new_weights = original_weights.reshape( n_original_bins/rebin_factor, rebin_factor).sum(1)
+
+	return new_bins, new_weights
+

@@ -2,7 +2,7 @@ import numpy as np
 import os
 import sys 
 import re
-from Tau_Decay_Simulator import Tau_Decay_Simulator
+from Tau_Decay_Pythia_Simulator import Tau_Decay_Simulator
 # tau_exit_num_events = 1.e6
 
 # Define constants
@@ -791,9 +791,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     sum_P_exit_P_range_P_det = 0.    # zero until it is proven to be detectable
     triggered_events = []
     #ranged_events = []
-    all_events = []
-    f_hadrons = []
-    f_leptons = []
+    energy_frac =TDS.sample_energy_fraction(num_events=len(GEOM_theta_exit))
     for k in range(0,len(GEOM_theta_exit)):
 
 	# 7.1 Get LUT exit angle closest to geometry exit angle. Note these are both zenith angles. The GEOM_theta_exit is the zenith angle of the particle
@@ -805,15 +803,8 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
             log10_tau_energy[k] = LUT_log10_E_tau[idx][np.random.randint(0,len(LUT_log10_E_tau[idx]))] # random tau energy
             # estimated decay range based on tau energy
 	    decay_range = tau_lepton_decay_range(log10_tau_energy[k])                     
-	    # sample the shower type --- 1 leptonic, 0 hadronic
-	    stp = TDS.sample_shower_type()
-	    # the energy that goes into the shower
-	    efrac = TDS.sample_energy_fraction(stp)
-            if( stp == 0):
-                f_hadrons.append(efrac)
-            if( stp == 1):
-                f_leptons.append(efrac)
-            log10_shower_energy[k] = np.log10( efrac )  + log10_tau_energy[k]
+	    # sample the energy that goes into the shower
+            log10_shower_energy[k] = np.log10( energy_frac[k] )  + log10_tau_energy[k]
 	    
 	    x_exit[k], y_exit[k], z_exit[k] = update_exit_point(k_x[k], k_y[k], k_z[k], x_exit[k], y_exit[k], z_exit[k], icethick_geom, ice_thick)
 	
@@ -906,7 +897,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     print >> sys.stderr,  '\t %1.3e km^2 sr, %d events exited Earth'%(A_Omega*sum_P_exit/float(N_cut),N_tot*sum_P_exit/float(N_cut) )
     print >> sys.stderr,  '\t %1.3e km^2 sr, %d events decayed before detector'%(A_Omega*sum_P_exit_P_range/float(N_cut), N_tot*sum_P_exit_P_range/float(N_cut))
     print >> sys.stderr,  '\t %1.3e km^2 sr, %d events triggered'%(A_Omega*sum_P_exit_P_range_P_det/float(N_cut), N_tot*sum_P_exit_P_range_P_det/float(N_cut))
-    np.savez("energyfraction.npz", f_hadrons=f_hadrons, f_leptons=f_leptons)
+    np.savez("energyfraction.npz", shower_energy_fraction=energy_frac)
     np.savez(outTag+'.npz', A_Omega_start    = A_Omega,
                             A_Omega_exit     = A_Omega*sum_P_exit/float(N_cut),
                             A_Omega_range    = A_Omega*sum_P_exit_P_range/float(N_cut),

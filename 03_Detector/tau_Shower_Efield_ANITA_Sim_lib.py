@@ -632,6 +632,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     print "LUT", LUT
     print "icethick_geom ", icethick_geom
     Epk_to_pk_threshold = float(Epk_to_pk_threshold)
+    Max_Delta_Theta_View = float(Max_Delta_Theta_View)
     print "Epeak-to-peak_threshold ", Epk_to_pk_threshold
     print "Max_Delta_Theta_View ", Max_Delta_Theta_View
 
@@ -800,6 +801,9 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     
     # calculate how far off-cone we are, in degrees
     decay_delta_view_angle = np.abs(Theta_Peak - decay_view_angle*180./np.pi)
+    #print("Theta_Peak", Theta_Peak)
+    #print("decay_view_angle", decay_view_angle*180./np.pi)
+    #print("Max_Delta_Theta_View", Max_Delta_Theta_View, "decay_delta_view_angle", decay_delta_view_angle)
 
     # 14. Check for trigger at the detector
     for k in range(0,len(GEOM_theta_exit)):
@@ -813,9 +817,10 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
 		#ranged_events.append(np.array( [ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_Voltage[k], exit_view_angle[k]*180./np.pi, decay_view_angle[k]*180./np.pi,  zenith_angle[k]*180./np.pi ]))
 
                 #if(Peak_Voltage_SNR[k] > threshold_voltage_snr):
-		if( Peak_Voltage[k] > Peak_Voltage_Threshold and decay_delta_view_angle[k] < Max_Delta_Theta_View):
+		if( (Peak_Voltage[k] > Peak_Voltage_Threshold) and (decay_delta_view_angle[k] < Max_Delta_Theta_View)):
                     P_det[k] = 1.
-                    triggered_events.append(np.array( [ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_Voltage[k], exit_view_angle[k]*180./np.pi, decay_view_angle[k]*180./np.pi,  zenith_angle_exit[k]*180./np.pi, zenith_angle_decay[k]*180./np.pi, zenith_angle_geom[k]*180./np.pi, decay_altitude[k], P_LUT[k], P_range[k], P_det[k]], decay_delta_view_angle[k]))
+                    #print( "view angle cut ", decay_delta_view_angle[k], Max_Delta_Theta_View, decay_delta_view_angle[k] < Max_Delta_Theta_View)
+                    triggered_events.append(np.array( [ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_Voltage[k], exit_view_angle[k]*180./np.pi, decay_view_angle[k]*180./np.pi,  zenith_angle_exit[k]*180./np.pi, zenith_angle_decay[k]*180./np.pi, zenith_angle_geom[k]*180./np.pi, decay_altitude[k], P_LUT[k], P_range[k], P_det[k], decay_delta_view_angle[k] ] ))
         
 	sum_P_exit                += P_LUT[k]
         sum_P_exit_P_range        += P_LUT[k] * P_range[k]
