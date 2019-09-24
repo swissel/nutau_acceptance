@@ -667,7 +667,8 @@ def parse_input_args(input_arg_string):
 
 ####################################################################################
 def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_ang, f_Lo, f_High, outTag='test', 
-			N=-1, noise='default', Gain_dB=10.0, Nphased=1, LUT=True, icethick_geom = 0.0, threshold_voltage_snr=5.0): 
+			N=-1, noise='default', Gain_dB=10.0, Nphased=1, LUT=True, icethick_geom = 0.0, threshold_voltage_snr=5.0,
+			start_event=0): 
     
     print >> sys.stderr,  "Inputs to A_OMEGA_tau_exit:\n=============================="
     print >> sys.stderr,  "geom_file_name", geom_file_name
@@ -696,15 +697,15 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     print >> sys.stderr,  'Number of Geometry Events to scan', N_tot
     print >> sys.stderr,  ''
 
-    cos_theta_exit  = GEOM['cos_theta_exit'][0:N_tot]
-    exit_view_angle = GEOM['exit_view_angle'][0:N_tot]
-    x_exit          = GEOM['x_exit'][0:N_tot]
+    cos_theta_exit  = GEOM['cos_theta_exit'][start_event:start_event + N_tot]
+    exit_view_angle = GEOM['exit_view_angle'][start_event:start_event + N_tot]
+    x_exit          = GEOM['x_exit'][start_event:start_event + N_tot]
     y_exit          = np.zeros(len(x_exit))
     #y_exit          = GEOM['y_exit']
-    z_exit          = GEOM['z_exit'][0:N_tot]
-    k_x             = GEOM['k_x'][0:N_tot]
-    k_y             = GEOM['k_y'][0:N_tot]
-    k_z             = GEOM['k_z'][0:N_tot]
+    z_exit          = GEOM['z_exit'][start_event:start_event + N_tot]
+    k_x             = GEOM['k_x'][start_event:start_event + N_tot]
+    k_y             = GEOM['k_y'][start_event:start_event + N_tot]
+    k_z             = GEOM['k_z'][start_event:start_event + N_tot]
     A_geom          = GEOM['A_geom']
     altitude = float(GEOM_inputs['altitude'])
     GEOM.close()
@@ -717,6 +718,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     # 3. Impose a viewing angle cut
     view_cut = exit_view_angle*180./np.pi<cut_ang
     N_cut = len(cos_theta_exit[view_cut])
+    print >> sys.stderr, "Number of events: ", N_cut, "Start event:", start_event, "Maximum number of events:", N_tot, "Max - start:", N_tot-start_event
     A_Omega = A_geom* float(N_cut) / float(N_tot)
     # TODO: fix to calculate dist_to_detector from decay point rather than from
     # the exit point which is what it is now.
