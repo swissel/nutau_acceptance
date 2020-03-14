@@ -203,13 +203,16 @@ def Voltage_interp(efield_interpolator_list, view_angle_deg, zenith_angle_deg,
     decay_altitude_list = np.arange(0., altitude,0.5)
 
     # find the nearest neighbor for both the zenith angle at the exit point and the decay alttidue
-    i_ze = find_nearest(zenith_list, zenith_exit_deg[i])[0]
-    i_d  = find_nearest(decay_altitude_list, decay_altitude[i], lower_bound = 0)[0]
-    nearest_zenith_angle = zenith_list[i_ze]
-    nearest_decay_altitude = decay_altitude_list[i_d]
     zhaires_sim_icethick = 0.0
+    zhaires_sim_detector_altitude = altitude
     e_zhaires_tau_shower = 1e17
-    r_zhaires_tau_shower = get_distance_decay_to_detector_zenith_exit(zhaires_sim_icethick , nearest_decay_altitude,
+    r_zhaires_tau_shower = np.zeros(len(v))
+    for i in range(len(v)): # loop over all the sims
+    	i_ze = find_nearest(zenith_list, zenith_angle_deg[i])[0]
+    	i_d  = find_nearest(decay_altitude_list, decay_altitude_km[i], lower_bound = 0)[0]
+    	nearest_zenith_angle = zenith_list[i_ze]
+    	nearest_decay_altitude = decay_altitude_list[i_d]
+    	r_zhaires_tau_shower[i] = get_distance_decay_to_detector_zenith_exit(zhaires_sim_icethick , nearest_decay_altitude,
 									   zhaires_sim_detector_altitude, nearest_zenith_angle)
 
     df = 10.
