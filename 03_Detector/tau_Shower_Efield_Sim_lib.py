@@ -823,7 +823,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     if( LUT ):
         Peak_Voltage = Voltage_interp( efield_interpolator_list, decay_view_angle*180./np.pi, zenith_angle_decay*180./np.pi,
 				       altitude, decay_altitude, 
-				       f_Lo, f_High, log10_shower_energy, dist_exit_to_detector, dist_decay_to_detector, Gain_dB, Z_A, Z_L, Nphased)
+				       f_Lo, f_High, log10_shower_energy, dist_decay_to_detector, Gain_dB, Z_A, Z_L, Nphased)
     else:
 	# 0-km decay parameterization
 	#Peak_Efield = efield_anita_generic_parameterization(pow(10, log10_tau_energy), dist_decay_to_detector, decay_view_angle*180./np.pi, parm_decay_altitude=0)
