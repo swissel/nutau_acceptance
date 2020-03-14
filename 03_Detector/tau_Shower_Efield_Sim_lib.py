@@ -198,7 +198,7 @@ def Voltage_interp(efield_interpolator_list, view_angle_deg, zenith_angle_deg,
     d[d>altitude-0.5] = altitude-0.5
     d[d<0] = 0.
 
-    # these are the simulation arrays used to generate the parameterizations
+    # these are the simulation arrays used to generate the lookup tables
     zenith_list = np.array([50, 55, 60, 65, 70, 75, 80, 85, 87, 89])
     decay_altitude_list = np.arange(0., altitude,0.5)
 
