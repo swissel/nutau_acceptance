@@ -307,7 +307,7 @@ def find_nearest(array, values, lower_bound=None, upper_bound=None):
     # finds the nearest values in the arrays
     # if the values are outside the desire range, sets the index to -1
     values = np.atleast_1d(values)
-    indices = np.abs(np.int64(np.subtract.outer(array, values))).argmin(0)
+    indices = np.abs(np.round(np.subtract.outer(array, values))).argmin(0)
     out = array[indices]
     if( lower_bound != None):
         bound_ind = np.where(values < lower_bound)
