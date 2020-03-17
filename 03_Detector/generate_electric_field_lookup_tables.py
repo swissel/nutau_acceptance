@@ -100,6 +100,8 @@ def construct_epeak_array(h):
 	f_Lo_list = np.arange(10., 1610., 10.)
 	if( h < 37): 
 		decay_list = np.arange(0., h, 0.5)
+		if( h == 0.5):
+			decay_list = np.array([0, 0.5])
 	else:
 		decay_list = np.arange(0,10,1)
 	bandwidth = 10.
@@ -121,7 +123,10 @@ def construct_epeak_array(h):
 	for d in decay_list:
     		z_epeak_array = []
     		for z in zenith_list:
-        		psi_list, epeak_list = efield_vs_angle(h, d, z, f_Lo_list, bandwidth)
+        		if( d == h):
+				psi_list, epeak_list = efield_vs_angle(h, d-0.5, z, f_Lo_list, bandwidth)
+			else:
+				psi_list, epeak_list = efield_vs_angle(h, d, z, f_Lo_list, bandwidth)
         		z_epeak_array.append(epeak_list)
    		epeak_array.append(z_epeak_array)
 	epeak_array = np.array(epeak_array)
@@ -429,6 +434,7 @@ def clean_full_set(args, gauss_array=None, ncontours_array=None):
 	choose_psi = psi_list[ind]
 	ind = [0,1,2,3,4,5,6,7,8]
 	choose_zenith = zenith_list[ind]
+	print("plotting the uncleaned versions")
 	for i_d, decay in enumerate(decay_list):
 		plot_epeak_zenith_psi(args.altitude,decay,epeak_array, zenith_list, psi_list, choose_start_freq, i_d)
 		plot_epeak_zenith_start_freq(args.altitude,decay,epeak_array, zenith_list, f_Lo_list, choose_psi, i_d)
@@ -439,11 +445,12 @@ def clean_full_set(args, gauss_array=None, ncontours_array=None):
 		plot_epeak_start_freq_psi(args.altitude,decay,epeak_array, f_Lo_list, psi_list, choose_zenith,i_d, log=True, plot_suffix="_log")
 
 	# clean up the numerical noise from the simulations		
-	#print "clean_numerical_noise", args.altitude, args.gauss_blur_sigma, args.ncontours
+	print "clean_numerical_noise", args.altitude, args.gauss_blur_sigma, args.ncontours
 	epeak_array = clean_numerical_noise(args.altitude, epeak_array, decay_list, zenith_list, psi_list, f_Lo_list, 
 		gauss_blur_sigma = args.gauss_blur_sigma, ncontours = args.ncontours )
 
 	# plot cleaned slices
+	print "plotting cleaned ones"
 	for i_d, decay in enumerate(decay_list):
  		plot_epeak_zenith_psi(args.altitude,decay,epeak_array, zenith_list, psi_list, choose_start_freq, i_d, plot_suffix="_clean")
 		plot_epeak_zenith_start_freq(args.altitude,decay,epeak_array, zenith_list, f_Lo_list, choose_psi, i_d, plot_suffix="_clean")
@@ -654,39 +661,43 @@ if __name__ == "__main__":
 	
 	parser=argparse.ArgumentParser(description='Build peak electric field lookup tables')
   	parser.add_argument("-a", "--altitude",  default=3, type=float)
-	#parser.add_argument("-d", "--decay", default=0, type=float)
+	parser.add_argument("-d", "--decay", default=0, type=float)
 	parser.add_argument("-g", "--gauss_blur_sigma", default = 3.0, type=float)
 	parser.add_argument("-n", "--ncontours", default=10, type=int)
 	parser.add_argument("-z", "--zenith", default=-999, type=int)
 	parser.add_argument("-t", "--test", default=False, type=bool)
 	args=parser.parse_args()
 
-	# use a spreadsheet to set the parameters
-	clean_parms = pd.read_csv("clean_params_electricfields_mountaintop.csv")	      
-	#zenith_list = [55, 60, 65, 70, 75, 80, 85, 87, 89]
-	zenith_list = [55, 60, 65, 70, 75, 80, 85, 87, 89]
-	for a in [37.0]:#[1.0, 2.0, 3.0, 4.0]:
-		glist = []
-		nclist = []
-		for d in np.arange(0., 10., 1.):#for d in np.arange(0, 4.0, 0.5):
-			if( d < a):	
-				print "MAKING INTERPOLATORS FOR ALTITUDE : ", a, " DECAY HEIGHT ", d
-				args.altitude = a
-				#args.decay = d
-				zglist = []
-				znclist = []
-				for ize, ze in enumerate(zenith_list):
-					cut = (clean_parms.altitude == a) & (clean_parms.decay == d) & (clean_parms.zenith == ze)
-					zglist.append( float(clean_parms[cut].gauss_blur.values[0] ) )
-					znclist.append( int(clean_parms[cut].ncontours.values[0] ) )
-				glist.append(zglist)
-				nclist.append(znclist)
-		args.gauss_blur_sigma = glist
-		args.ncontours = nclist
+	if args.test:
+		test_interpolator(args)
+	else:
+		# use a spreadsheet to set the parameters
+		clean_parms = pd.read_csv("clean_params_electricfields_mountaintop.csv")	      
+		#zenith_list = [55, 60, 65, 70, 75, 80, 85, 87, 89]
+		zenith_list = [55, 60, 65, 70, 75, 80, 85, 87, 89 ]
+		for a in [0.5]:#[1.0, 2.0, 3.0, 4.0]:
+			glist = []
+			nclist = []
+			for d in np.arange(0, 4.0, 0.5):
+				if (d<a)and(a>0.5) or (d<=a)and(a==0.5):	
+					print "MAKING INTERPOLATORS FOR ALTITUDE : ", a, " DECAY HEIGHT ", d
+					args.altitude = a
+					#args.decay = d
+					zglist = []
+					znclist = []
+					for ize, ze in enumerate(zenith_list):
+						cut = (clean_parms.altitude == a) & (clean_parms.decay == d) & (clean_parms.zenith == ze)
+						zglist.append( float(clean_parms[cut].gauss_blur.values[0] ) )
+						znclist.append( int(clean_parms[cut].ncontours.values[0] ) )
+					glist.append(zglist)
+					nclist.append(znclist)
+			args.gauss_blur_sigma = glist
+			args.ncontours = nclist
 
-		clean_full_set(args)
-'''
-	if args.zenith < 0.:
+			clean_full_set(args)
+
+	pyp.show()
+'''	if args.zenith < 0.:
 		if( args.test ):
 			test_interpolator(args)
 		else:
@@ -694,5 +705,5 @@ if __name__ == "__main__":
 	else:
 		test_zenith(args)
 
-	pyp.show()
 '''
+
