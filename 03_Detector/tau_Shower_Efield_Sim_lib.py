@@ -198,18 +198,21 @@ def Voltage_interp(efield_interpolator_list, view_angle_deg, zenith_angle_deg,
     d[d>altitude-0.5] = altitude-0.5
     d[d<0] = 0.
 
-    # these are the simulation arrays used to generate the parameterizations
+    # these are the simulation arrays used to generate the lookup tables
     zenith_list = np.array([50, 55, 60, 65, 70, 75, 80, 85, 87, 89])
     decay_altitude_list = np.arange(0., altitude,0.5)
 
     # find the nearest neighbor for both the zenith angle at the exit point and the decay alttidue
-    i_ze = find_nearest(zenith_list, zenith_exit_deg[i])[0]
-    i_d  = find_nearest(decay_altitude_list, decay_altitude[i], lower_bound = 0)[0]
-    nearest_zenith_angle = zenith_list[i_ze]
-    nearest_decay_altitude = decay_altitude_list[i_d]
     zhaires_sim_icethick = 0.0
+    zhaires_sim_detector_altitude = altitude
     e_zhaires_tau_shower = 1e17
-    r_zhaires_tau_shower = get_distance_decay_to_detector_zenith_exit(zhaires_sim_icethick , nearest_decay_altitude,
+    r_zhaires_tau_shower = np.zeros(len(v))
+    for i in range(len(v)): # loop over all the sims
+    	i_ze = find_nearest(zenith_list, zenith_angle_deg[i])[0]
+    	i_d  = find_nearest(decay_altitude_list, decay_altitude_km[i], lower_bound = 0)[0]
+    	nearest_zenith_angle = zenith_list[i_ze]
+    	nearest_decay_altitude = decay_altitude_list[i_d]
+    	r_zhaires_tau_shower[i] = get_distance_decay_to_detector_zenith_exit(zhaires_sim_icethick , nearest_decay_altitude,
 									   zhaires_sim_detector_altitude, nearest_zenith_angle)
 
     df = 10.
@@ -304,7 +307,7 @@ def find_nearest(array, values, lower_bound=None, upper_bound=None):
     # finds the nearest values in the arrays
     # if the values are outside the desire range, sets the index to -1
     values = np.atleast_1d(values)
-    indices = np.abs(np.int64(np.subtract.outer(array, values))).argmin(0)
+    indices = np.abs(np.round(np.subtract.outer(array, values))).argmin(0)
     out = array[indices]
     if( lower_bound != None):
         bound_ind = np.where(values < lower_bound)
@@ -823,7 +826,7 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
     if( LUT ):
         Peak_Voltage = Voltage_interp( efield_interpolator_list, decay_view_angle*180./np.pi, zenith_angle_decay*180./np.pi,
 				       altitude, decay_altitude, 
-				       f_Lo, f_High, log10_shower_energy, dist_exit_to_detector, dist_decay_to_detector, Gain_dB, Z_A, Z_L, Nphased)
+				       f_Lo, f_High, log10_shower_energy, dist_decay_to_detector, Gain_dB, Z_A, Z_L, Nphased)
     else:
 	# 0-km decay parameterization
 	#Peak_Efield = efield_anita_generic_parameterization(pow(10, log10_tau_energy), dist_decay_to_detector, decay_view_angle*180./np.pi, parm_decay_altitude=0)
