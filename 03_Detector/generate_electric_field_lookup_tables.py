@@ -520,8 +520,8 @@ def plot_interp_zenith_psi(h, decay, interpolator,choose_start_freq, plot_suffix
     pyp.suptitle("Interpolated Peak E-fields")
     pyp.savefig(os.environ['TAU_ACC_DETECTOR_PLOTS_DIR'] + "/interp_efield_maps_altitude%2.1fkm_decay%2.1fkm_ze_vs_psi%s.png"%(h, decay, plot_suffix) )
 
-def compare_1d_plots(h, epeak_array,efield_interpolator_list,decay_list, 
-                     zenith_list, psi_list, f_Lo_list, 
+def compare_1d_plots(h, epeak_array,efield_interpolator_list, 
+                     decay_list, zenith_list, psi_list, f_Lo_list, 
                      choose_decay,  choose_ze, choose_f_Lo, log=False, plot_suffix="" ):
 
     pyp.figure(figsize=(24,4))
@@ -579,10 +579,10 @@ def compare_1d_plots(h, epeak_array,efield_interpolator_list,decay_list,
 
     for ze in zenith_list:#np.arange(55, 90, 5):
         if( log):
-		pyp.plot(psi_list,  np.log10(efield_interpolator_list[i_choose_f_Lo]( ze, decay, psi_list,)*1e6), marker='o',
+		pyp.plot(psi_list,  np.log10(efield_interpolator_list[i_choose_f_Lo]( ze, decay_list[i_choose_d], psi_list,)*1e6), marker='o',
                  color=cmap(norm(ze)), linestyle='--', label="%d$^{\circ}$"%(int(ze)))
 	else:
-		pyp.plot(psi_list,  efield_interpolator_list[i_choose_f_Lo]( ze, decay, psi_list,)*1e6, marker='o',
+		pyp.plot(psi_list,  efield_interpolator_list[i_choose_f_Lo]( ze, decay_list[i_choose_d], psi_list,)*1e6, marker='o',
                  color=cmap(norm(ze)), linestyle='--', label="%d$^{\circ}$"%(int(ze)))
     pyp.xlabel(" $\psi$ (deg.)")
     if( log ):
@@ -599,7 +599,7 @@ def compare_1d_plots(h, epeak_array,efield_interpolator_list,decay_list,
     df = 10.
     epeak_decay = epeak_array[:, i_choose_ze, i_choose_f_Lo, :]*1e6
     ze = zenith_list[i_choose_ze]
-    norm = matplotlib.colors.Normalize(vmin=0., vmax=altitude)
+    norm = matplotlib.colors.Normalize(vmin=0., vmax=h)
     for i_d, d in enumerate(decay_list):
     	if( log ):
             pyp.plot(psi_list, np.log10(epeak_decay[ i_d, :]), color = cmap(norm(d)), linewidth=3,
@@ -625,19 +625,19 @@ def compare_1d_plots(h, epeak_array,efield_interpolator_list,decay_list,
     pyp.xlim(psi_list.min(), psi_list.max())
     pyp.legend(loc=[1.01, 0.1])
     pyp.title("%d MHz, %d$^{\circ}$"%((int(f_Lo_list[i_choose_f_Lo]), int(zenith_list[i_choose_ze]))))
-    pyp.savefig(os.environ['TAU_ACC_DETECTOR_PLOTS_DIR'] + \
-                "/3dinterp_efield_maps_altitude%2.1fkm_decay%2.1fkm_ze%d_psi_fLo%dMHz.png"%(h, choose_decay, choose_ze, choose_f_Lo)) 
+    #pyp.savefig(os.environ['TAU_ACC_DETECTOR_PLOTS_DIR'] + \
+    #            "/3dinterp_efield_maps_altitude%2.1fkm_decay%2.1fkm_ze%d_psi_fLo%dMHz.png"%(h, choose_decay, choose_ze, choose_f_Lo)) 
 
 
 ###########################################################
 def test_interpolator(args):
 	# read CSV pulse files and calculate the frequency-domain peak electric field
-	zenith_list, psi_list, f_Lo_list, epeak_array = construct_epeak_array(args.altitude, args.decay)
-	#i_ze = np.where(zenith_list == args.zenith)[0][0]
+	decay_list, zenith_list, psi_list, f_Lo_list, epeak_array = construct_epeak_array(args.altitude )
+	i_d = np.where(decay_list == args.decay)[0][0]
 
 	# read the interpolator file
-	EFIELD_LUT_filename = os.environ['TAU_ACC_ZHAIRES_DIR']\
-			       +'/interpolator_efields_%dkm.npz'%args.altitude
+	EFIELD_LUT_file_name = os.environ['TAU_ACC_ZHAIRES_DIR']\
+			       +'/interpolator_efields_%1.1fkm.npz'%args.altitude
 	load_efield_interpolator(EFIELD_LUT_file_name)
 	efield_interpolator_list = load_efield_interpolator(EFIELD_LUT_file_name)
 
@@ -645,17 +645,20 @@ def test_interpolator(args):
 	# for epeak vs. zenith vs. psi and for several starting frequencies
 	# note that the interpolated parameters are zenith angle and view angle / psi angle
 	choose_start_freq = [10., 30., 50., 200., 300., 1000.] # the interpolator was made with 10-MHz subband spacing
-	plot_epeak_zenith_psi(altitude, decay, epeak_array, 
-                                zenith_list, psi_list, choose_start_freq)
+	plot_epeak_zenith_psi(args.altitude, args.decay, epeak_array, 
+                                zenith_list, psi_list, choose_start_freq, i_d)
 	choose_start_freq = [15., 35., 55., 205., 305., 1005.] # the interpolator was made with 10-MHz subband spacing. These are in between
-	plot_interp_zenith_psi(altitude, decay, efield_interpolator_list, choose_start_freq)
+	plot_interp_zenith_psi(args.altitude, args.decay, efield_interpolator_list, choose_start_freq, i_d)
 	
-
 	# compare 1-d distributions from the interpolator for several different frequencies
 	choose_ze=80
 	choose_f_Lo=300
 	choose_decay=0.5
-	compare_1d_plots(args.altitude, epeak_array,efield_interpolator_list, zenith_list, psi_list, f_Lo_list, choose_decay, choose_ze, choose_f_Lo )
+	compare_1d_plots(args.altitude, epeak_array,efield_interpolator_list,
+	                 decay_list, zenith_list, psi_list, f_Lo_list, 
+			 choose_decay, choose_ze, choose_f_Lo, log=True )
+	
+	return decay_list, zenith_list, psi_list, f_Lo_list, epeak_array, efield_interpolator_list 
 
 if __name__ == "__main__":
 	
@@ -669,7 +672,7 @@ if __name__ == "__main__":
 	args=parser.parse_args()
 
 	if args.test:
-		test_interpolator(args)
+		ret = test_interpolator(args)
 	else:
 		# use a spreadsheet to set the parameters
 		clean_parms = pd.read_csv("clean_params_electricfields_mountaintop.csv")	      
