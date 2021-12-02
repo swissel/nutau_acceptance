@@ -218,7 +218,7 @@ def Voltage_interp(efield_interpolator_list, view_angle_deg, zenith_angle_deg,
     df = 10.
     for freq in np.arange(f_Lo, f_High, df):
         i_f_Lo = int(round(freq / df - 1))
-        # using the average frequency in the bin to calculate the voltage
+        # using the average frequency in the bin to calculate the voltage 
         Voltage += E_to_V_signal(efield_interpolator_list[i_f_Lo](z,d,v), Gain_dB, (freq+df)/2., Z_A, Z_L, Nphased)
 
     # account for ZHAIReS sims only extending to 3.16 deg 
@@ -899,6 +899,302 @@ def A_OMEGA_tau_exit(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_an
                             A_Omega_trig     = A_Omega*sum_P_exit_P_range_P_det/float(N_cut),
 			    noise_voltage    = Noise_Voltage,
                             triggered_events = np.array(triggered_events),
+			    emerge_angle_bins = emerge_angle_bins,
+			    nsim_emerge_angle = nsim_emerge_angle,
+                            #ranged_events = np.array(ranged_events),
+			    #all_events = np.array(all_events))
+			    )
+    print >> sys.stderr,  "Wrote ", outTag+'.npz and ', outTag+'_events.npz'
+
+    exit()
+
+####################################################################################
+def IndependentDetectors(geom_file_name, LUT_file_name, EFIELD_LUT_file_name, cut_ang, f_Lo, f_High, det_separation, outTag='test', 
+			N=-1, noise='default', Gain_dB=10.0, Nphased=1, LUT=True, icethick_geom = 0.0, threshold_voltage_snr=5.0,
+			start_event=0): 
+    
+    print >> sys.stderr,  "Inputs to A_OMEGA_tau_exit:\n=============================="
+    print >> sys.stderr,  "geom_file_name", geom_file_name
+    print >> sys.stderr,  "LUT_file_name", LUT_file_name
+    print >> sys.stderr,  "EFIELD_LUT_file_name", EFIELD_LUT_file_name
+    print >> sys.stderr,  "cut_ang", cut_ang
+    print >> sys.stderr,  "Bandwidth f_Lo, f_High", f_Lo, f_High
+    print >> sys.stderr,  "Output Tag: ", outTag
+    print >> sys.stderr,  "N", N
+    print >> sys.stderr,  "Gain_dB", Gain_dB
+    print >> sys.stderr,  "Nphased", Nphased
+    print >> sys.stderr,  "LUT", LUT
+    print >> sys.stderr,  "icethick_geom ", icethick_geom
+
+    # 1. Load geometry file
+    GEOM = np.load(geom_file_name)
+    GEOM_inputs = parse_input_args(GEOM['input_args'])
+    print >> sys.stderr,  '\nGEOMETRY FILE INPUT ARGUMENTS\n', 
+    for key in GEOM_inputs.keys():
+        print >> sys.stderr,  '\t',key.ljust(20), GEOM_inputs[key]
+
+    if( N == -1):
+    	N_tot = len(GEOM['cos_theta_exit'])
+    else:
+    	N_tot = int(N)
+    print >> sys.stderr,  'Number of Geometry Events to scan', N_tot
+    print >> sys.stderr,  ''
+
+    cos_theta_exit  = GEOM['cos_theta_exit'][start_event:start_event + N_tot]
+    exit_view_angle = GEOM['exit_view_angle'][start_event:start_event + N_tot]
+    x_exit          = GEOM['x_exit'][start_event:start_event + N_tot]
+    y_exit          = np.zeros(len(x_exit))
+    #y_exit          = GEOM['y_exit']
+    z_exit          = GEOM['z_exit'][start_event:start_event + N_tot]
+    k_x             = GEOM['k_x'][start_event:start_event + N_tot]
+    k_y             = GEOM['k_y'][start_event:start_event + N_tot]
+    k_z             = GEOM['k_z'][start_event:start_event + N_tot]
+    A_geom          = GEOM['A_geom']
+    altitude = float(GEOM_inputs['altitude'])
+    GEOM.close()
+   
+    # 2. Set up the detector position
+    x_det = 0.
+    y_det = 0.
+    z_det = altitude + Earth_radius
+
+    x_det2 = 0.
+    y_det2 = det_separation
+    z_det2 = altitude + Earth_radius
+    
+    # 3. Impose a viewing angle cut
+    view_cut = exit_view_angle*180./np.pi<cut_ang
+    N_cut = len(cos_theta_exit[view_cut])
+    print >> sys.stderr, "Number of events: ", N_cut, "Start event:", start_event, "Maximum number of events:", N_tot, "Max - start:", N_tot-start_event
+    A_Omega = A_geom* float(N_cut) / float(N_tot)
+    # TODO: fix to calculate dist_to_detector from decay point rather than from
+    # the exit point which is what it is now.
+    dist_exit_to_detector = get_distance_to_detector(x_exit, y_exit, z_exit, x_det, y_det, z_det)[view_cut] 
+    dist_exit_to_detector2 = get_distance_to_detector(x_exit, y_exit, z_exit, x_det2, y_det2, z_det2)[view_cut] 
+
+    GEOM_theta_exit = np.arccos(cos_theta_exit[view_cut])*180./np.pi
+    exit_view_angle = exit_view_angle[view_cut] #radians
+    zenith_angle_exit = np.arccos(cos_theta_exit) # radians
+    theta_emergence = np.pi/2. - zenith_angle_exit # radians
+    
+    # 7. set up some arrays to be calculated on the fly
+    dist_decay_to_detector = np.zeros(len(dist_exit_to_detector))
+    dist_decay_to_detector2 = np.zeros(len(dist_exit_to_detector2))
+    x_decay = np.zeros(len(x_exit[view_cut]))
+    y_decay = np.zeros(len(y_exit[view_cut]))
+    z_decay = np.zeros(len(z_exit[view_cut]))
+    decay_view_angle = np.zeros(len(exit_view_angle))
+    decay_view_angle2 = np.zeros(len(exit_view_angle))
+    X0_dist = np.zeros(len(dist_exit_to_detector))
+    log10_tau_energy = np.zeros(len(exit_view_angle))
+    log10_shower_energy = np.zeros(len(exit_view_angle))
+    Peak_Voltage_SNR = np.zeros(len(exit_view_angle))
+    Peak_Voltage_SNR2 = np.zeros(len(exit_view_angle))
+    zenith_angle_geom = np.zeros(len(exit_view_angle))
+    zenith_angle_geom2 = np.zeros(len(exit_view_angle))
+    
+    # 8. Set up histogram for the differential acceptance
+    binwidth=0.3 # 0.3deg wide bins
+    emerge_angle_bins = np.arange(0., 90.+ binwidth, binwidth)
+    nsim_emerge_angle = np.zeros(len(emerge_angle_bins))
+    
+    # 9. Compute the noise in this band
+    #       integrating in 10-MHz steps, to match the frequency bins of the peak voltage
+    df = 10.# MHz
+    noises = noise_voltage(f_Lo, f_High, df,  Z_L, Z_A, Gain_dB, Nphased) # factor of 1e6 because noise temperature is in V/Hz.
+    print >> sys.stderr,  "Galactic Noise voltage ", noises[1]*1e6, " micro-Volts"
+    print >> sys.stderr,  "Galactic noise temperature K ", galactic_temperature(np.arange(f_Lo, f_High+df, df))[1], sum(galactic_temperature(np.arange(f_Lo, f_High+df, df))[1])
+    print >> sys.stderr,  "System noise ", noises[2]
+    if( noise == 'sys'):
+    	Noise_Voltage = noises[2]
+    	print >> sys.stderr,  "Noise voltage ", Noise_Voltage*1e6, " micro-Volts, due to T_sys + T_ant"
+    elif( noise == 'gal'):
+    	Noise_Voltage = noises[1]
+    	print >> sys.stderr,  "Noise voltage ", Noise_Voltage*1e6, " micro-Volts, due to G*T_gal"
+    else: # default is the combination
+    	Noise_Voltage = noises[0]
+    	print >> sys.stderr,  "Noise voltage ", Noise_Voltage*1e6, " micro-Volts, due to G*T_gal + T_sys + T_ant"
+    
+    # 5. Load Energy Look-up Table
+    print >> sys.stderr,  "Loading energy look-up table: ", LUT_file_name
+    LUT_th_exit, LUT_P_exit, LUT_log10_E_tau = load_tau_LUTs(LUT_file_name)
+    P_LUT = np.zeros(len(x_exit[view_cut]))   # zero until it is
+    P_range = np.zeros(len(x_exit[view_cut])) # zero until it is proven to decay before it passes the detector
+    P_det = np.zeros(len(x_exit[view_cut]))   # zero until it is proven to be detectable
+    P_det2 = np.zeros(len(x_exit[view_cut]))   # zero until it is proven to be detectable
+    ice_thick_match = re.match( r'.*/(\d+\.\d+)km\_ice.*', LUT_file_name)
+    ice_thick = 2.0
+    if ice_thick_match:
+    	ice_thick = float(ice_thick_match.group(1))
+    print >> sys.stderr, "Ice thickness ", ice_thick, " km"
+
+    # 6. Load the Efield interpolator for this altitude 
+    #    N. B.: EField_LUT_file_name should have the altitude in the file name
+    if LUT:
+    	global efield_interpolator_list
+    	efield_interpolator_list = load_efield_interpolator(EFIELD_LUT_file_name)
+    else:
+    	global parm_2d 
+    	parm_2d = load_efield_parameterization()
+    
+    # 7. Load the Tau Decay Simulator
+    ###
+    TDS = Tau_Decay_Simulator()
+
+    # 11. Loop Through Geometry Events
+    sum_P_exit = 0.
+    sum_P_exit_P_range = 0.	     # zero until it is proven to decay before it passes the detector
+    sum_P_exit_P_range_P_det = 0.    # zero until it is proven to be detectable
+    sum_P_exit_P_range_P_det_P_det2 = 0.    # zero until it is proven to be detectable
+    sum_Events_Det1Det2 = 0.
+
+    triggered_events = []
+    triggered_events2 = []
+    #ranged_events = []
+    energy_frac =TDS.sample_energy_fraction(num_events=len(GEOM_theta_exit))
+    for k in range(0,len(GEOM_theta_exit)):
+
+	# 7.1 Get LUT exit angle closest to geometry exit angle. Note these are both zenith angles. The GEOM_theta_exit is the zenith angle of the particle
+        idx = np.argmin(np.abs(LUT_th_exit - GEOM_theta_exit[k]))
+        # 7.2 Get tau lepton energy and decay position
+        P_LUT[k] = LUT_P_exit[idx]
+        if( P_LUT[k] > 1.e-15):  # make sure the probability of this event is non-zero  
+	    # sample the pexit lookup tables for the exiting tau energy
+            log10_tau_energy[k] = LUT_log10_E_tau[idx][np.random.randint(0,len(LUT_log10_E_tau[idx]))] # random tau energy
+            # estimated decay range based on tau energy
+            decay_range = tau_lepton_decay_range(log10_tau_energy[k])                     
+	    # sample the energy that goes into the shower
+            log10_shower_energy[k] = np.log10( energy_frac[k] )  + log10_tau_energy[k]
+	    
+            x_exit[k], y_exit[k], z_exit[k] = update_exit_point(k_x[k], k_y[k], k_z[k], x_exit[k], y_exit[k], z_exit[k], icethick_geom, ice_thick)
+	
+	    # the exit point and the detector position define the exit point zenith angle and emergence angle
+            zenith_angle_geom[k] = get_geometric_zenith_angle(x_det, y_det, z_det, x_exit[k], y_exit[k], z_exit[k]) # radians, zenith angle in the geometry tables at the exit point
+            zenith_angle_geom2[k] = get_geometric_zenith_angle(x_det2, y_det2, z_det2, x_exit[k], y_exit[k], z_exit[k]) # radians, zenith angle in the geometry tables at the exit point
+
+	    # sample exponentially distributed decay positions	
+            X0_dist[k] = np.random.exponential(scale=decay_range)                          
+            x_decay[k], y_decay[k], z_decay[k], decay_view_angle[k], dist_decay_to_detector[k] = decay_point_geom(k_x[k], k_y[k], k_z[k], x_exit[k], y_exit[k], z_exit[k], X0_dist[k], x_det, y_det, z_det)
+            x_decay[k], y_decay[k], z_decay[k], decay_view_angle2[k], dist_decay_to_detector2[k] = decay_point_geom(k_x[k], k_y[k], k_z[k], x_exit[k], y_exit[k], z_exit[k], X0_dist[k], x_det2, y_det2, z_det2)
+
+            # If the event is contained within the range, then the probability is 1.
+            # If the shower decays beyond the detector, then it has a negative x-position. 
+	    # The range probability in that case is zero.
+            if((X0_dist[k] < dist_exit_to_detector[k]) and (x_decay[k] > 0.)):
+                P_range[k] = 1.
+	
+        if(k%100000 == 0 and k>0):
+            print >> sys.stderr, 'Progress: %d events '%k, log10_tau_energy[k]
+            
+    # 12. Calculate the electric field and voltage at the detector 
+    # 
+    # Electric field is calculated by summing the interpolated electric fields in 10-MHz subbands
+    # perform array-wise interpolations (outside of the event loop) to minimize number of computations. 
+    # Voltage is calculated in three steps:
+    #	1. Interpolate electric field from ZHAireS simulations in 10 MHz bins
+    #   2. Convert electric field to voltage based on detector model (gain, nphased, 
+    #   3. Sum over all 10-MHz bins in the desired frequency band (f_Lo to f_High)
+    
+    # 13.1 calculate the decay altitude and zenith angles
+    decay_altitude = get_altitude(x_decay, y_decay, z_decay, ground_altitude=Earth_radius+ice_thick)
+    zenith_angle_decay =  get_zenith_angle(k_x, k_y, k_z, x_decay, y_decay, z_decay) # zenith angle of the shower at the decay point
+
+    if( LUT ):
+        Peak_Voltage = Voltage_interp( efield_interpolator_list, decay_view_angle*180./np.pi, zenith_angle_decay*180./np.pi,
+				       altitude, decay_altitude, 
+				       f_Lo, f_High, log10_shower_energy, dist_decay_to_detector, Gain_dB, Z_A, Z_L, Nphased)
+        Peak_Voltage2 = Voltage_interp( efield_interpolator_list, decay_view_angle2*180./np.pi, zenith_angle_decay*180./np.pi,
+				       altitude, decay_altitude, 
+				       f_Lo, f_High, log10_shower_energy, dist_decay_to_detector2, Gain_dB, Z_A, Z_L, Nphased)
+
+    else:
+	# 0-km decay parameterization
+	#Peak_Efield = efield_anita_generic_parameterization(pow(10, log10_tau_energy), dist_decay_to_detector, decay_view_angle*180./np.pi, parm_decay_altitude=0)
+	# 5-km decay parameterization
+	#Peak_Efield   = efield_anita_generic_parameterization(pow(10, log10_tau_energy),dist_decay_to_detector, decay_view_angle*180./np.pi, parm_decay_altitude=5)
+	# multiple decay altitudes
+	#Peak_Efield   = efield_anita_generic_parameterization_decay(pow(10, log10_tau_energy), zhs_decay_altitude, dist_decay_to_detector, decay_view_angle*180./np.pi)
+	# multiple decay altitudes and zenith angles
+	
+	# the ZHAireS simulations ere all run at ice thicknesses of  2 km, 
+    	# so you assume that the altitude is calculated from the Earth radius + 2 km
+    	zhs_decay_altitude = get_altitude(x_decay, y_decay, z_decay, ground_altitude=Earth_radius+2.0)
+    	Peak_Efield   = efield_anita_generic_parameterization_decay_zenith(pow(10, log10_shower_energy), zhs_decay_altitude, zenith_angle_decay*180./np.pi,  
+								dist_decay_to_detector,  decay_view_angle*180./np.pi, parm_2d)
+ 	# 13.2 generalizing to 300 MHz
+    	Peak_Voltage = E_to_V_signal(Peak_Efield, Gain_dB, 300., Z_A, Z_L, Nphased) 
+    	Peak_Voltage_Threshold = E_to_V_signal(Epk_to_pk_threshold, Gain_dB, 300., Z_A, Z_L, Nphased) / Vpk_to_Vpkpk_conversion
+    #print >> sys.stderr,  "Thresholds : Peak Voltage (not pk-to-pk) :", Peak_Voltage_Threshold, "V/m, Epeak-to-peak :", Epk_to_pk_threshold, " V/m, pk2pk to pk conversion ", Vpk_to_Vpkpk_conversion
+
+    # 14. Check for trigger at the detector
+    for k in range(0,len(GEOM_theta_exit)):
+        if( P_LUT[k] > 1.e-15):
+            if( P_range[k] == 1.):
+                Peak_Voltage_SNR[k] = Peak_Voltage[k] / Noise_Voltage
+                Peak_Voltage_SNR2[k] = Peak_Voltage2[k] / Noise_Voltage
+
+		#ranged_events.append(np.array( [ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_Voltage[k], exit_view_angle[k]*180./np.pi, decay_view_angle[k]*180./np.pi,  zenith_angle[k]*180./np.pi ]))
+
+                if(Peak_Voltage_SNR[k] > threshold_voltage_snr):
+                    P_det[k] = 1.
+                    triggered_events.append(np.array( [ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_Voltage[k], exit_view_angle[k]*180./np.pi, decay_view_angle[k]*180./np.pi,  zenith_angle_exit[k]*180./np.pi, zenith_angle_decay[k]*180./np.pi, zenith_angle_geom[k]*180./np.pi, decay_altitude[k], P_LUT[k], P_range[k], P_det[k], log10_shower_energy[k] ]))
+                if(Peak_Voltage_SNR2[k] > threshold_voltage_snr):
+                    P_det2[k] = 1.
+                    triggered_events2.append(np.array( [ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_Voltage[k], exit_view_angle[k]*180./np.pi, decay_view_angle[k]*180./np.pi,  zenith_angle_exit[k]*180./np.pi, zenith_angle_decay[k]*180./np.pi, zenith_angle_geom[k]*180./np.pi, decay_altitude[k], P_LUT[k], P_range[k], P_det[k], log10_shower_energy[k] ]))
+
+        
+        sum_P_exit                += P_LUT[k]
+        sum_P_exit_P_range        += P_LUT[k] * P_range[k]
+        sum_P_exit_P_range_P_det  += P_LUT[k] * P_range[k] * P_det[k]
+        sum_P_exit_P_range_P_det_P_det2  += P_LUT[k] * P_range[k] * P_det[k] * P_det2[k]
+	
+        if( P_det[k] == 1):
+                sum_Events_Det1Det2       += P_det2[k]
+	# Each sample should report
+	#1. the emergence angle corresponding to the exit point.
+	#2. the emergence angle of the particle.
+	#3. P_exit of the emergence angle of the sampled particle.
+	#4. P_range of the sampled particle.
+	#5. P_trig of the sampled particle.
+
+        if(k%100000 == 0 and k>0):
+            #if(k%1== 0 and k>0):
+            print >> sys.stderr,  'After %d events: %d events triggered: '%(len(GEOM_theta_exit[0:k]), len(triggered_events))
+            print >> sys.stderr,  '\t %1.3e km^2 sr'%A_Omega
+            print >> sys.stderr,  '\t %1.3e km^2 sr'%(A_Omega*sum_P_exit / float(k))
+            print >> sys.stderr,  '\t %1.3e km^2 sr'%(A_Omega*sum_P_exit_P_range / float(k) )
+            print >> sys.stderr,  '\t %1.3e km^2 sr'%(A_Omega*sum_P_exit_P_range_P_det / float(k) )
+            print >> sys.stderr,  '\t %1.3e km^2 sr'%(A_Omega*sum_P_exit_P_range_P_det_P_det2 / float(k) )
+            print >> sys.stderr,  '\t Fraction of events triggered in the first detector and triggering the second detector: %2.3e / %2.3e '%(sum_Events_Det1Det2, len(triggered_events))
+            print >> sys.stderr,  '\t ',np.array(triggered_events).shape
+            print >> sys.stderr,  ''
+        #all_events.append(np.array( [ log10_tau_energy[k], dist_exit_to_detector[k], X0_dist[k], dist_decay_to_detector[k], Peak_Voltage[k], exit_view_angle[k]*180./np.pi, decay_view_angle[k]*180./np.pi,  zenith_angle_exit[k]*180./np.pi, zenith_angle_decay[k]*180./np.pi, zenith_angle_geom[k]*180./np.pi, decay_altitude[k], P_LUT[k], P_range[k], P_det[k]]))
+
+    print >> sys.stderr,  'After all %d events, %d events triggered: '%(len(GEOM_theta_exit), len(triggered_events))
+    print >> sys.stderr,  '\t %1.3e km^2 sr'%(A_Omega)
+    print >> sys.stderr,  '\t %1.3e km^2 sr, %d events exited Earth'%(A_Omega*sum_P_exit/float(N_cut),N_tot*sum_P_exit/float(N_cut) )
+    print >> sys.stderr,  '\t %1.3e km^2 sr, %d events decayed before detector'%(A_Omega*sum_P_exit_P_range/float(N_cut), N_tot*sum_P_exit_P_range/float(N_cut))
+    print >> sys.stderr,  '\t %1.3e km^2 sr, %d events triggered'%(A_Omega*sum_P_exit_P_range_P_det/float(N_cut), N_tot*sum_P_exit_P_range_P_det/float(N_cut))
+    print >> sys.stderr,  '\t %1.3e km^2 sr, %d events triggered both'%(A_Omega*sum_P_exit_P_range_P_det_P_det2/float(N_cut), N_tot*sum_P_exit_P_range_P_det_P_det2/float(N_cut))
+    print >> sys.stderr,  '\t Fraction of events triggered in the first detector and triggering the second detector %2.3e / %2.3e '%(sum_Events_Det1Det2 ,  len(triggered_events))
+    np.savez("energyfraction.npz", shower_energy_fraction=energy_frac)
+    np.savez(outTag+'.npz', A_Omega_start    = A_Omega,
+                            A_Omega_exit     = A_Omega*sum_P_exit/float(N_cut),
+                            A_Omega_range    = A_Omega*sum_P_exit_P_range/float(N_cut),
+                            A_Omega_trig     = A_Omega*sum_P_exit_P_range_P_det/float(N_cut),
+                            N_events_start   = N_tot,
+                            N_triggered      = len(triggered_events),
+			    N_triggered2     = len(triggered_events2),
+			    N_Det1Det2  = sum_Events_Det1Det2 )
+
+
+    np.savez(outTag+'_events.npz', A_Omega_start    = A_Omega,
+                            A_Omega_exit     = A_Omega*sum_P_exit/float(N_cut),
+                            A_Omega_range    = A_Omega*sum_P_exit_P_range/float(N_cut),
+                            A_Omega_trig     = A_Omega*sum_P_exit_P_range_P_det/float(N_cut),
+			    noise_voltage    = Noise_Voltage,
+                            triggered_events = np.array(triggered_events),
+			    triggered_events2 = np.array(triggered_events2),
 			    emerge_angle_bins = emerge_angle_bins,
 			    nsim_emerge_angle = nsim_emerge_angle,
                             #ranged_events = np.array(ranged_events),
