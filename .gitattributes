@@ -1,0 +1,2 @@
+efield_files/*.npz filter=lfs diff=lfs merge=lfs -text
+geom_files/* filter=lfs diff=lfs merge=lfs -text
